@@ -19,3 +19,10 @@ artifacts/
 !data/.gitkeep
 !results/.gitkeep
 !.env.example
+src/kanekasegi_bot.egg-info/
+AGENT_NK225MICRO_RESEARCH.md
+RESEARCH_NOTES.md
+RESEARCH_NOTES_20260331.md
+SBI_INTEGRATION_CHECKLIST.md
+config.backtest-nk225micro-jpx.yaml
+docs_RESEARCH_TEMPLATE.md
