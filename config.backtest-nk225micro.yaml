@@ -1,0 +1,38 @@
+mode: backtest
+runtime:
+  symbol: NK225MICRO
+  timeframe: 15m
+  poll_seconds: 60
+  max_order_failures: 3
+  max_state_failures: 2
+  candle_limit: 260
+  data_source: jpx_zip
+  zip_glob: C:/Users/issin/Downloads/future_ohlc_minute_23_*.zip
+  broker: paper
+  live_order_enabled: false
+  notify_on_blocked_live_signal: true
+  session_filter: both
+  contract_type: current
+strategy:
+  breakout_lookback: 20
+  ema_period: 200
+  atr_period: 14
+  atr_stop_multiplier: 2.0
+  trailing_atr_multiplier: 2.5
+risk:
+  risk_per_trade_pct: 0.005
+  max_daily_loss_pct: 0.02
+  max_simultaneous_positions: 1
+  max_position_notional: 100000
+  initial_capital: 300000
+  min_cash_buffer: 50000
+  per_contract_margin: 50000
+paper:
+  initial_balance: 300000
+  fee_rate: 0.0
+  slippage_bps: 0
+storage:
+  sqlite_path: data/backtest-nk225micro.db
+  log_path: logs/backtest-nk225micro.jsonl
+  health_path: logs/backtest-nk225micro-health.json
+  sqlite_journal_mode: MEMORY

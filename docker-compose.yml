@@ -1,0 +1,12 @@
+services:
+  kanekasegi:
+    build: .
+    container_name: kanekasegi-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "-m", "kanekasegi.main", "--config", "config.yaml"]
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs

@@ -1,0 +1,1 @@
+"""Kanekasegi trading bot package."""
