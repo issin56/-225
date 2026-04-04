@@ -53,6 +53,7 @@ class StrategyConfig(BaseModel):
     trailing_atr_multiplier: float = 2.5
     strategy_ids: list[str] = Field(default_factory=lambda: ["rule1"])
     allowed_sessions: list[str] = Field(default_factory=lambda: ["day", "night"])
+    direction_filter: str = "both"
     allowed_weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
     entry_start_time: str | None = None
     entry_end_time: str | None = None
@@ -66,6 +67,8 @@ class StrategyConfig(BaseModel):
             raise ValueError("strategy.allowed_sessions must contain only 'day' or 'night'")
         if not self.allowed_sessions:
             raise ValueError("strategy.allowed_sessions must not be empty")
+        if self.direction_filter not in {"both", "long_only", "short_only"}:
+            raise ValueError("strategy.direction_filter must be 'both', 'long_only', or 'short_only'")
         for weekday in self.allowed_weekdays:
             if weekday < 0 or weekday > 6:
                 raise ValueError("strategy.allowed_weekdays must contain values from 0 to 6")

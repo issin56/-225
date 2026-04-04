@@ -65,3 +65,17 @@ def test_strategy_respects_day_session_time_filter():
     signal = strategy.generate_signal(MarketSnapshot(candles=adjusted, last_price=adjusted[-1].close), PositionState(symbol="NK225MICRO"))
     assert signal.action == SignalAction.HOLD
     assert signal.reason == "entry_filtered"
+
+
+def test_strategy_respects_long_only_filter():
+    strategy = BreakoutTrendStrategy(StrategyConfig(direction_filter="long_only"))
+    candles = build_trending_candles("down")
+    signal = strategy.generate_signal(MarketSnapshot(candles=candles, last_price=candles[-1].close), PositionState(symbol="BTCUSDT"))
+    assert signal.action == SignalAction.HOLD
+
+
+def test_strategy_respects_short_only_filter():
+    strategy = BreakoutTrendStrategy(StrategyConfig(direction_filter="short_only"))
+    candles = build_trending_candles("up")
+    signal = strategy.generate_signal(MarketSnapshot(candles=candles, last_price=candles[-1].close), PositionState(symbol="BTCUSDT"))
+    assert signal.action == SignalAction.HOLD

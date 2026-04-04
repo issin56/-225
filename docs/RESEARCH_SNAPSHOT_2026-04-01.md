@@ -38,6 +38,16 @@ Checkpoint:
 
 - `results/20260404-013403-night-study-20260404.json`
 
+Direction split batch:
+
+```bash
+py -3.11 -m kanekasegi.research --config config.backtest-nk225micro.yaml --top 6 --min-trades 30 --candidate day_breakout_opening_midweek --candidate day_breakout_opening_midweek_long_only --candidate day_breakout_opening_midweek_short_only --candidate day_breakout_morning_midweek --candidate day_breakout_morning_midweek_long_only --candidate day_breakout_morning_midweek_short_only --checkpoint-dir results --batch-name night-study-20260404-direction
+```
+
+Checkpoint:
+
+- `results/20260404-170655-night-study-20260404-direction.json`
+
 Command:
 
 ```bash
@@ -106,10 +116,13 @@ py -3.11 -m kanekasegi.research --config config.backtest-nk225micro.yaml --top 6
 - Day-session limited rules remain stronger and more stable than the tested early-night rule
 - Weekday filters materially improved risk-adjusted results in the opening and morning windows
 - `day_breakout_opening_midweek` is currently the strongest practical candidate because it kept profit near the all-week opening rule while cutting drawdown by roughly one third
+- Direction split testing showed that the edge is not primarily coming from the short side; `opening_midweek_long_only` stayed decent, but both tested `short_only` variants were much weaker
+- `opening_midweek_long_only` is the best fallback if the next round prioritizes lower drawdown over maximum profit, with profit `26680.86` and max drawdown `11653.88`
 - `both_breakout_fast` still has the highest raw profit, but its trade count and drawdown make it less attractive for a 300k account than the tighter day-session variants
-- Win rate is still low, so the next work should focus on direction split and exit decomposition rather than broadening sessions
+- The next work should focus on exit decomposition for the stronger opening-long and opening-both midweek variants rather than broadening sessions
 - The immediate practical path is:
   - day-only
   - opening/morning windows
   - weekday filters
-  - direction split
+  - exit decomposition
+  - opening-long vs opening-both comparison

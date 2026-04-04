@@ -33,6 +33,33 @@ def _candidate_rules() -> list[dict[str, object]]:
             "breakout_lookback": 8,
             "ema_period": 120,
             "allowed_sessions": ["day"],
+            "direction_filter": "both",
+            "allowed_weekdays": [1, 2, 3],
+            "entry_start_time": "09:00",
+            "entry_end_time": "10:30",
+            "skip_first_minutes": 15,
+            "use_trend_filter": True,
+        },
+        {
+            "name": "day_breakout_opening_midweek_long_only",
+            "timeframe": "15m",
+            "breakout_lookback": 8,
+            "ema_period": 120,
+            "allowed_sessions": ["day"],
+            "direction_filter": "long_only",
+            "allowed_weekdays": [1, 2, 3],
+            "entry_start_time": "09:00",
+            "entry_end_time": "10:30",
+            "skip_first_minutes": 15,
+            "use_trend_filter": True,
+        },
+        {
+            "name": "day_breakout_opening_midweek_short_only",
+            "timeframe": "15m",
+            "breakout_lookback": 8,
+            "ema_period": 120,
+            "allowed_sessions": ["day"],
+            "direction_filter": "short_only",
             "allowed_weekdays": [1, 2, 3],
             "entry_start_time": "09:00",
             "entry_end_time": "10:30",
@@ -45,6 +72,7 @@ def _candidate_rules() -> list[dict[str, object]]:
             "breakout_lookback": 8,
             "ema_period": 120,
             "allowed_sessions": ["day"],
+            "direction_filter": "both",
             "allowed_weekdays": [0, 1, 2, 3],
             "entry_start_time": "09:00",
             "entry_end_time": "10:30",
@@ -68,6 +96,33 @@ def _candidate_rules() -> list[dict[str, object]]:
             "breakout_lookback": 12,
             "ema_period": 120,
             "allowed_sessions": ["day"],
+            "direction_filter": "both",
+            "allowed_weekdays": [1, 2, 3],
+            "entry_start_time": "09:15",
+            "entry_end_time": "11:15",
+            "skip_first_minutes": 15,
+            "use_trend_filter": True,
+        },
+        {
+            "name": "day_breakout_morning_midweek_long_only",
+            "timeframe": "15m",
+            "breakout_lookback": 12,
+            "ema_period": 120,
+            "allowed_sessions": ["day"],
+            "direction_filter": "long_only",
+            "allowed_weekdays": [1, 2, 3],
+            "entry_start_time": "09:15",
+            "entry_end_time": "11:15",
+            "skip_first_minutes": 15,
+            "use_trend_filter": True,
+        },
+        {
+            "name": "day_breakout_morning_midweek_short_only",
+            "timeframe": "15m",
+            "breakout_lookback": 12,
+            "ema_period": 120,
+            "allowed_sessions": ["day"],
+            "direction_filter": "short_only",
             "allowed_weekdays": [1, 2, 3],
             "entry_start_time": "09:15",
             "entry_end_time": "11:15",
@@ -80,6 +135,7 @@ def _candidate_rules() -> list[dict[str, object]]:
             "breakout_lookback": 12,
             "ema_period": 120,
             "allowed_sessions": ["day"],
+            "direction_filter": "both",
             "allowed_weekdays": [1, 2, 3, 4],
             "entry_start_time": "09:15",
             "entry_end_time": "11:15",
@@ -133,6 +189,17 @@ def _candidate_rules() -> list[dict[str, object]]:
     ]
 
 
+def _select_candidates(candidate_names: list[str] | None = None) -> list[dict[str, object]]:
+    candidates = _candidate_rules()
+    if not candidate_names:
+        return candidates
+    candidate_map = {str(candidate["name"]): candidate for candidate in candidates}
+    missing = [name for name in candidate_names if name not in candidate_map]
+    if missing:
+        raise ValueError(f"unknown candidate names: {', '.join(missing)}")
+    return [candidate_map[name] for name in candidate_names]
+
+
 def _score_result(result: dict[str, object]) -> float:
     profit = float(result["profit"])
     max_drawdown = max(float(result["max_drawdown"]), 1.0)
@@ -154,6 +221,7 @@ def _checkpoint_payload(
         "config_path": config_path,
         "runs": len(results),
         "min_trades_filter": min_trades,
+        "candidate_names": [str(item["name"]) for item in results],
         "top": ranked[:top],
         "all_results": results,
     }
@@ -175,17 +243,19 @@ def run_research_lab(
     *,
     top: int = 10,
     min_trades: int = 30,
+    candidate_names: list[str] | None = None,
     checkpoint_dir: str | os.PathLike[str] | None = None,
     batch_name: str | None = None,
 ) -> dict[str, object]:
     temp_dir = mkdtemp(prefix="kanekasegi-lab-")
     results: list[dict[str, object]] = []
-    for index, params in enumerate(_candidate_rules(), start=1):
+    for index, params in enumerate(_select_candidates(candidate_names), start=1):
         candidate = deepcopy(base_config)
         candidate.runtime.timeframe = str(params["timeframe"])
         candidate.strategy.breakout_lookback = int(params["breakout_lookback"])
         candidate.strategy.ema_period = int(params["ema_period"])
         candidate.strategy.allowed_sessions = list(params["allowed_sessions"])
+        candidate.strategy.direction_filter = str(params.get("direction_filter", candidate.strategy.direction_filter))
         candidate.strategy.allowed_weekdays = list(params.get("allowed_weekdays", candidate.strategy.allowed_weekdays))
         candidate.strategy.entry_start_time = params["entry_start_time"]
         candidate.strategy.entry_end_time = params["entry_end_time"]
@@ -202,6 +272,7 @@ def run_research_lab(
             "breakout_lookback": candidate.strategy.breakout_lookback,
             "ema_period": candidate.strategy.ema_period,
             "allowed_sessions": candidate.strategy.allowed_sessions,
+            "direction_filter": candidate.strategy.direction_filter,
             "allowed_weekdays": candidate.strategy.allowed_weekdays,
             "entry_start_time": candidate.strategy.entry_start_time,
             "entry_end_time": candidate.strategy.entry_end_time,
@@ -233,6 +304,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.backtest-nk225micro.yaml")
     parser.add_argument("--top", type=int, default=10)
     parser.add_argument("--min-trades", type=int, default=30)
+    parser.add_argument("--candidate", action="append", default=None)
     parser.add_argument("--checkpoint-dir", default="results")
     parser.add_argument("--batch-name", default="nk225micro-research")
     args = parser.parse_args()
@@ -245,6 +317,7 @@ def main() -> None:
         config,
         top=args.top,
         min_trades=args.min_trades,
+        candidate_names=args.candidate,
         checkpoint_dir=args.checkpoint_dir,
         batch_name=args.batch_name,
     )

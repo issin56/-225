@@ -41,7 +41,10 @@ class BreakoutTrendStrategy:
         long_trend_ok = (last_close > trend_ema) if self.config.use_trend_filter else True
         short_trend_ok = (last_close < trend_ema) if self.config.use_trend_filter else True
 
-        if long_trend_ok and last_close >= breakout_high:
+        allow_long = self.config.direction_filter in {"both", "long_only"}
+        allow_short = self.config.direction_filter in {"both", "short_only"}
+
+        if allow_long and long_trend_ok and last_close >= breakout_high:
             stop_price = last_close - (current_atr * self.config.atr_stop_multiplier)
             return Signal(
                 action=SignalAction.LONG,
@@ -51,7 +54,7 @@ class BreakoutTrendStrategy:
                 trailing_distance=current_atr * self.config.trailing_atr_multiplier,
                 metadata={"ema": trend_ema, "atr": current_atr},
             )
-        if short_trend_ok and last_close <= breakout_low:
+        if allow_short and short_trend_ok and last_close <= breakout_low:
             stop_price = last_close + (current_atr * self.config.atr_stop_multiplier)
             return Signal(
                 action=SignalAction.SHORT,
