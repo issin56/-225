@@ -87,6 +87,7 @@ def test_research_lab_returns_ranked_candidates(tmp_path):
     assert "allowed_weekdays" in result["top"][0]
     assert "direction_filter" in result["top"][0]
     assert "atr_stop_multiplier" in result["top"][0]
+    assert "trailing_atr_multiplier" in result["top"][0]
     assert len(result["candidate_names"]) == 9
 
 

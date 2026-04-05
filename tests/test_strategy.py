@@ -87,3 +87,35 @@ def test_strategy_respects_short_only_filter():
     candles = build_trending_candles("up")
     signal = strategy.generate_signal(MarketSnapshot(candles=candles, last_price=candles[-1].close), PositionState(symbol="BTCUSDT"))
     assert signal.action == SignalAction.HOLD
+
+
+def test_strategy_exits_long_on_trailing_stop():
+    strategy = BreakoutTrendStrategy(StrategyConfig())
+    candles = build_trending_candles("up")
+    last_close = candles[-1].close
+    position = PositionState(
+        symbol="BTCUSDT",
+        side=SignalAction.LONG,
+        quantity=1,
+        entry_price=last_close - 10,
+        stop_price=last_close - 30,
+        trailing_stop=last_close + 5,
+    )
+    signal = strategy.generate_signal(MarketSnapshot(candles=candles, last_price=last_close), position)
+    assert signal.action == SignalAction.EXIT
+
+
+def test_strategy_exits_short_on_trailing_stop():
+    strategy = BreakoutTrendStrategy(StrategyConfig())
+    candles = build_trending_candles("down")
+    last_close = candles[-1].close
+    position = PositionState(
+        symbol="BTCUSDT",
+        side=SignalAction.SHORT,
+        quantity=1,
+        entry_price=last_close + 10,
+        stop_price=last_close + 30,
+        trailing_stop=last_close - 5,
+    )
+    signal = strategy.generate_signal(MarketSnapshot(candles=candles, last_price=last_close), position)
+    assert signal.action == SignalAction.EXIT

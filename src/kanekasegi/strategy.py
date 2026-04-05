@@ -73,12 +73,20 @@ class BreakoutTrendStrategy:
         trailing_distance = current_atr * self.config.trailing_atr_multiplier
         if position.side == SignalAction.LONG:
             trailing_stop = max(position.trailing_stop or position.stop_price or 0.0, last_close - trailing_distance)
-            if last_close < trend_ema or (position.stop_price is not None and last_close <= position.stop_price):
+            if (
+                last_close < trend_ema
+                or (position.stop_price is not None and last_close <= position.stop_price)
+                or (trailing_stop is not None and last_close <= trailing_stop)
+            ):
                 return Signal(action=SignalAction.EXIT, reason="long_exit_signal", metadata={"ema": trend_ema, "atr": current_atr})
             return Signal(action=SignalAction.HOLD, reason="hold_long", trailing_distance=trailing_distance, metadata={"trailing_stop": trailing_stop})
         if position.side == SignalAction.SHORT:
             trailing_stop = min(position.trailing_stop or position.stop_price or last_close, last_close + trailing_distance)
-            if last_close > trend_ema or (position.stop_price is not None and last_close >= position.stop_price):
+            if (
+                last_close > trend_ema
+                or (position.stop_price is not None and last_close >= position.stop_price)
+                or (trailing_stop is not None and last_close >= trailing_stop)
+            ):
                 return Signal(action=SignalAction.EXIT, reason="short_exit_signal", metadata={"ema": trend_ema, "atr": current_atr})
             return Signal(action=SignalAction.HOLD, reason="hold_short", trailing_distance=trailing_distance, metadata={"trailing_stop": trailing_stop})
         return Signal(action=SignalAction.HOLD, reason="position_unknown")
