@@ -39,6 +39,14 @@ def test_strategy_enters_short_in_downtrend_breakout():
     assert signal.action == SignalAction.SHORT
 
 
+def test_strategy_respects_long_only_direction_filter():
+    strategy = BreakoutTrendStrategy(StrategyConfig(direction_filter="long_only"))
+    candles = build_trending_candles("down")
+    signal = strategy.generate_signal(MarketSnapshot(candles=candles, last_price=candles[-1].close), PositionState(symbol="BTCUSDT"))
+    assert signal.action == SignalAction.HOLD
+    assert signal.reason == "no_entry"
+
+
 def test_strategy_respects_day_session_time_filter():
     strategy = BreakoutTrendStrategy(
         StrategyConfig(

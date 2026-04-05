@@ -55,6 +55,7 @@ class StrategyConfig(BaseModel):
     allowed_sessions: list[str] = Field(default_factory=lambda: ["day", "night"])
     direction_filter: str = "both"
     allowed_weekdays: list[int] = Field(default_factory=lambda: [0, 1, 2, 3, 4])
+    direction_filter: str = "both"
     entry_start_time: str | None = None
     entry_end_time: str | None = None
     skip_first_minutes: int = 0

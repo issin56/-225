@@ -1,2 +1,3 @@
 $ErrorActionPreference = "Stop"
-python -m kanekasegi.main --config config.backtest.yaml
+$env:PYTHONPATH = "src"
+py -3.11 -m kanekasegi.main --config config.backtest.yaml

@@ -81,12 +81,13 @@ def test_research_lab_returns_ranked_candidates(tmp_path):
 
     result = run_research_lab(str(config_path), load_config(config_path), top=3, min_trades=1)
 
-    assert result["runs"] == 14
+    assert result["runs"] == 9
     assert len(result["top"]) == 3
     assert "score" in result["top"][0]
     assert "allowed_weekdays" in result["top"][0]
     assert "direction_filter" in result["top"][0]
-    assert len(result["candidate_names"]) == 14
+    assert "atr_stop_multiplier" in result["top"][0]
+    assert len(result["candidate_names"]) == 9
 
 
 def test_research_lab_writes_checkpoint(tmp_path):
