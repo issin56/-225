@@ -1,0 +1,54 @@
+{
+  "data": {
+    "file_path": "tests/fixtures/sample_ohlcv_breakout.csv"
+  },
+  "strategy": {
+    "name": "breakout",
+    "allow_reversal": true,
+    "parameters": {
+      "lookback_period": 4
+    }
+  },
+  "risk": {
+    "stop_loss": 0.0012,
+    "take_profit": 0.0018,
+    "spread": 0.0002,
+    "commission": 2.5,
+    "initial_capital": 10000.0,
+    "risk_per_trade": 0.01,
+    "max_consecutive_losses": 3,
+    "max_drawdown": 0.15
+  },
+  "walk_forward": {
+    "training_bars": 6,
+    "test_bars": 5,
+    "step_bars": 3,
+    "minimum_test_trades": 1,
+    "selection_metric": "total_pnl",
+    "top_candidates_per_window": 2,
+    "search_space": {
+      "parameters.lookback_period": {
+        "around_current": true,
+        "radius": 1,
+        "step": 1,
+        "minimum": 3
+      }
+    }
+  },
+  "output": {
+    "directory": "output",
+    "trades_file": "trades.csv",
+    "summary_file": "summary.json",
+    "equity_curve_file": "equity_curve.csv",
+    "signal_snapshot_file": "signal_snapshot.json",
+    "signal_history_file": "signal_history.csv",
+    "papertrade_state_file": "papertrade_state.json",
+    "papertrade_journal_file": "papertrade_journal.jsonl",
+    "notifications_file": "notifications.jsonl",
+    "scan_summary_file": "scan_summary.json",
+    "period_summary_csv_file": "period_summary.csv",
+    "period_summary_json_file": "period_summary.json",
+    "walk_forward_summary_file": "walk_forward_summary.json",
+    "compare_summary_file": "compare_summary.json"
+  }
+}

@@ -10,6 +10,7 @@ logs/
 data/
 results/
 artifacts/
+output/
 *.db
 *.sqlite
 *.sqlite3
@@ -18,6 +19,8 @@ artifacts/
 *.csv
 !data/.gitkeep
 !results/.gitkeep
+!output/.gitkeep
+!tests/fixtures/*.csv
 !.env.example
 src/kanekasegi_bot.egg-info/
 AGENT_NK225MICRO_RESEARCH.md

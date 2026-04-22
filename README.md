@@ -1,84 +1,140 @@
 # Kanekasegi Bot
 
-安全装置を優先した、先物向けの自動売買フレームワークです。`backtest` / `paper` / `live` の3モードで同じ戦略ロジックを再利用できる構成にしています。
+This repository now contains two workstreams:
 
-## できること
+1. The original `kanekasegi` futures trading and research framework
+2. A newer FX validation foundation for safe staged development
 
-- ルールベースの順張り戦略
-- ATRベースの初期ストップとトレーリング管理
-- 日次損失上限、同時保有数制限、異常時停止
-- SQLiteによる状態永続化
-- Discord Webhook通知
-- 合成データまたはCSV履歴データでのバックテスト
-- Docker前提の実行環境
+The intent is to keep live execution concerns isolated while building and validating strategy logic in safer layers first.
 
-## セットアップ
+## Kanekasegi
 
-```bash
-python -m venv .venv
-. .venv/Scripts/activate
-pip install -e .[dev]
-copy .env.example .env
+The original project remains under `src/kanekasegi/`.
+
+Main capabilities:
+
+- Backtest, paper, and live-oriented modes
+- Safety-first rule-based futures workflow
+- Broker adapters and runtime checks
+- Research utilities and batch scripts
+
+Typical setup:
+
+```powershell
+py -m venv .venv
+. .venv\Scripts\Activate.ps1
+py -m pip install -e .[dev]
+Copy-Item .env.example .env
 ```
 
-## 実行
+Typical commands:
 
-紙上売買または合成データ実行:
-
-```bash
-python -m kanekasegi.main --config config.yaml --once
+```powershell
+py -m kanekasegi.main --config config.yaml --once
+py -m kanekasegi.main --config config.yaml --validate-config
+py -m kanekasegi.main --config config.backtest.yaml
 ```
 
-設定チェックだけ行う:
+## FX Foundation
 
-```bash
-python -m kanekasegi.main --config config.yaml --validate-config
+The FX validation foundation lives in the top-level `src/` packages:
+
+```text
+src/
+  analysis/
+  backtest/
+  data/
+  papertrade/
+  strategy/
+  utils/
+config/
+tests/
+output/
 ```
 
-最新ヘルス状態を確認:
+Current scope:
 
-```bash
-python -m kanekasegi.main --config config.yaml --status
+1. Backtesting
+2. Signal-only paper trade decisions
+3. A structure that can later move toward small-size live execution
+
+### Current Features
+
+- Load OHLCV data from CSV
+- Validate required columns: `timestamp, open, high, low, close, volume`
+- Support `moving_average_cross` and `breakout` strategies
+- Simulate fixed stop loss, take profit, spread, commission, and risk sizing
+- Write trades, summary, equity curve, period summary, comparison, and walk-forward outputs
+- Keep signal-only paper trade state and decision journals
+- Scan multiple symbols from one config
+- Run walk-forward validation with parameter search
+
+### Main Commands
+
+Run commands from the repository root.
+
+Backtest:
+
+```powershell
+py -m src.backtest.runner --config config/backtest.sample.json
 ```
 
-GMOコイン live 接続チェック:
+Breakout sample:
 
-```bash
-python -m kanekasegi.main --config config.live-gmo.yaml --check-broker
+```powershell
+py -m src.backtest.runner --config config/backtest.breakout.sample.json
 ```
 
-CSV履歴データでバックテスト:
+Walk-forward validation:
 
-1. `config.backtest.yaml` を使う
-2. `runtime.csv_path` にCSVファイルのパスを設定
-3. 次を実行する
-
-```bash
-python -m kanekasegi.main --config config.backtest.yaml
+```powershell
+py -m src.analysis.walk_forward_runner --config config/backtest.sample.json
 ```
 
-CSVは `timestamp,open,high,low,close,volume` の列を持つ必要があります。サンプルは `data/sample_ohlcv.csv` です。
+Compare multiple configs:
 
-## Docker常駐
-
-```bash
-docker compose up -d --build
+```powershell
+py -m src.analysis.compare_runner --configs config/backtest.sample.json config/backtest.breakout.sample.json
 ```
 
-ログは `logs/`、SQLite は `data/` に保持されます。
+Signal-only paper trade:
 
-## テスト
-
-```bash
-pytest
+```powershell
+py -m src.papertrade.runner --config config/backtest.sample.json
+py -m src.papertrade.runner --config config/papertrade.multi.sample.json --all-symbols --reset-state
 ```
 
-## 補足
+Run tests:
 
-- `live` モードは現在 `GMOコイン` の公開データ取得と口座接続確認まで対応しています。
-- GMOコインのAPI公式ドキュメントでは現物とレバレッジ取引が対象で、海外取引所の無期限先物とは商品性が異なります。
-- GMOの新規成行注文は実装済みですが、クローズ注文は安全のためまだブロックしています。
-- `paper` モードはバックテストと同じ戦略・リスクロジックを共有します。
-- `.env` は起動時に自動読込されます。
-- `logs/health.json` に最新のヘルス状態を書き出すので、外部監視から参照できます。
-- この環境ではまだPython本体が未導入のため、コード生成後の実行確認は未実施です。
+```powershell
+py -m pytest tests
+```
+
+### FX Config Files
+
+- `config/backtest.sample.json`
+- `config/backtest.breakout.sample.json`
+- `config/papertrade.multi.sample.json`
+
+### FX Output Files
+
+Generated files are written under `output/`. Only `output/.gitkeep` is tracked.
+
+Examples:
+
+- `output/trades.csv`
+- `output/summary.json`
+- `output/equity_curve.csv`
+- `output/period_summary.json`
+- `output/walk_forward_summary.json`
+- `output/compare_summary.json`
+- `output/signal_snapshot.json`
+- `output/papertrade_state.json`
+- `output/papertrade_journal.jsonl`
+- `output/notifications.jsonl`
+
+## Notes
+
+- The original `kanekasegi` code is preserved as-is in this repository.
+- The FX foundation is intentionally focused on validation and paper signals, not live order execution.
+- Test CSV fixtures are stored under `tests/fixtures/`.
