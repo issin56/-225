@@ -26,11 +26,12 @@ def _mark_to_market_equity(bot: TradingBot, ticker: float) -> tuple[float, float
     balance = bot.exchange.get_balance()
     position = bot.storage.load_position(bot.config.runtime.symbol)
     unrealized = 0.0
+    point_value = bot.config.risk.contract_point_value
     if position.is_open:
         if position.side == SignalAction.LONG:
-            unrealized = (ticker - position.entry_price) * position.quantity
+            unrealized = (ticker - position.entry_price) * position.quantity * point_value
         elif position.side == SignalAction.SHORT:
-            unrealized = (position.entry_price - ticker) * position.quantity
+            unrealized = (position.entry_price - ticker) * position.quantity * point_value
     equity = balance + unrealized
     margin_requirement = (bot.config.risk.per_contract_margin or 0.0) * position.quantity
     available_balance = equity - margin_requirement

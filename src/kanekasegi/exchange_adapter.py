@@ -38,11 +38,19 @@ class ExchangeAdapter(ABC):
 
 
 class PaperExchangeAdapter(ExchangeAdapter):
-    def __init__(self, market_data_provider, initial_balance: float, fee_rate: float = 0.0004, slippage_bps: float = 3.0) -> None:
+    def __init__(
+        self,
+        market_data_provider,
+        initial_balance: float,
+        fee_rate: float = 0.0004,
+        slippage_bps: float = 3.0,
+        contract_point_value: float = 1.0,
+    ) -> None:
         self.market_data_provider = market_data_provider
         self.balance = initial_balance
         self.fee_rate = fee_rate
         self.slippage_bps = slippage_bps
+        self.contract_point_value = contract_point_value
         self.position = PositionState(symbol="")
         self.orders: list[OrderResult] = []
 
@@ -62,14 +70,18 @@ class PaperExchangeAdapter(ExchangeAdapter):
         market_price = self.get_ticker(order_request.symbol)
         slippage = market_price * (self.slippage_bps / 10_000)
         fill_price = market_price + slippage if order_request.side == OrderSide.BUY else market_price - slippage
-        notional = fill_price * order_request.quantity
+        notional = fill_price * order_request.quantity * self.contract_point_value
         fee = notional * self.fee_rate
         realized_pnl = 0.0
         if order_request.reduce_only and self.position.is_open:
             if self.position.side.value == "long":
-                realized_pnl = (fill_price - self.position.entry_price) * order_request.quantity
+                realized_pnl = (
+                    (fill_price - self.position.entry_price) * order_request.quantity * self.contract_point_value
+                )
             else:
-                realized_pnl = (self.position.entry_price - fill_price) * order_request.quantity
+                realized_pnl = (
+                    (self.position.entry_price - fill_price) * order_request.quantity * self.contract_point_value
+                )
             self.balance += realized_pnl
         self.balance -= fee
         order = OrderResult(

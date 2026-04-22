@@ -23,6 +23,10 @@ output/
 !tests/fixtures/*.csv
 !.env.example
 src/kanekasegi_bot.egg-info/
+tmp/
+tmp_brother_repo/
+tmp-research-err.txt
+tmp-research-out.txt
 AGENT_NK225MICRO_RESEARCH.md
 RESEARCH_NOTES.md
 RESEARCH_NOTES_20260331.md

@@ -8,7 +8,7 @@ runtime:
   candle_limit: 260
   data_source: jpx_zip
   zip_glob: C:/Users/issin/Downloads/future_ohlc_minute_23_*.zip
-  external_factors_csv:
+  external_factors_csv: data/external_factors.usdjpy.csv
   broker: paper
   live_order_enabled: false
   notify_on_blocked_live_signal: true
@@ -34,7 +34,7 @@ paper:
   fee_rate: 0.0
   slippage_bps: 0
 storage:
-  sqlite_path: data/backtest-nk225micro.db
-  log_path: logs/backtest-nk225micro.jsonl
-  health_path: logs/backtest-nk225micro-health.json
+  sqlite_path: data/backtest-nk225micro-usdjpy.db
+  log_path: logs/backtest-nk225micro-usdjpy.jsonl
+  health_path: logs/backtest-nk225micro-usdjpy-health.json
   sqlite_journal_mode: MEMORY

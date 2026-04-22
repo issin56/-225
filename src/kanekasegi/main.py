@@ -13,6 +13,7 @@ from .csv_data import CsvMarketDataProvider
 from .doctor import run_doctor
 from .execution import ExecutionEngine
 from .exchange_adapter import LiveExchangeAdapter, PaperExchangeAdapter
+from .external_factors import load_external_factors
 from .gmo_adapter import GmoCoinAdapter
 from .jpx_data import JpxMinuteZipMarketDataProvider
 from .market_data import InMemoryMarketDataProvider
@@ -102,6 +103,7 @@ def build_bot(config_path: str, *, config: AppConfig | None = None, skip_live_cr
             initial_balance=config.paper.initial_balance,
             fee_rate=config.paper.fee_rate,
             slippage_bps=config.paper.slippage_bps,
+            contract_point_value=config.risk.contract_point_value,
         )
         exchange.position = storage.load_position(config.runtime.symbol)
 
@@ -149,6 +151,7 @@ def main() -> None:
     parser.add_argument("--doctor", action="store_true")
     parser.add_argument("--research-summary", action="store_true")
     parser.add_argument("--research-grid", action="store_true")
+    parser.add_argument("--factor-summary", action="store_true")
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -175,6 +178,12 @@ def main() -> None:
         if not hasattr(market_data, "describe"):
             raise ValueError("--research-summary requires a market data provider with describe() support")
         print(json.dumps(market_data.describe(), ensure_ascii=False, indent=2))
+        return
+    if args.factor_summary:
+        if not config.runtime.external_factors_csv:
+            raise ValueError("--factor-summary requires runtime.external_factors_csv")
+        factors = load_external_factors(config.runtime.external_factors_csv)
+        print(json.dumps(factors.describe(), ensure_ascii=False, indent=2))
         return
     if args.check_broker:
         if not hasattr(bot.exchange, "connectivity_check"):

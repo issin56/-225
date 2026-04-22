@@ -130,3 +130,135 @@ def test_config_rejects_unknown_direction_filter():
                 },
             }
         )
+
+
+def test_config_requires_external_factor_name_when_filter_enabled():
+    with pytest.raises(ValueError):
+        AppConfig.model_validate(
+            {
+                "mode": "paper",
+                "runtime": {
+                    "symbol": "BTCUSDT",
+                    "timeframe": "15m",
+                    "poll_seconds": 60,
+                    "max_order_failures": 3,
+                    "max_state_failures": 2,
+                    "candle_limit": 260,
+                    "data_source": "synthetic",
+                    "broker": "paper",
+                },
+                "strategy": {
+                    "breakout_lookback": 20,
+                    "ema_period": 200,
+                    "atr_period": 14,
+                    "atr_stop_multiplier": 2.0,
+                    "trailing_atr_multiplier": 2.5,
+                    "external_factor_filter": "positive",
+                },
+                "risk": {
+                    "risk_per_trade_pct": 0.005,
+                    "max_daily_loss_pct": 0.02,
+                    "max_simultaneous_positions": 1,
+                    "max_position_notional": 100000,
+                },
+                "paper": {
+                    "initial_balance": 100000,
+                    "fee_rate": 0.0004,
+                    "slippage_bps": 0,
+                },
+                "storage": {
+                    "sqlite_path": "data/trading.db",
+                    "log_path": "logs/bot.jsonl",
+                    "health_path": "logs/health.json",
+                    "sqlite_journal_mode": "MEMORY",
+                },
+            }
+        )
+
+
+def test_config_rejects_unknown_external_factor_filter():
+    with pytest.raises(ValueError):
+        AppConfig.model_validate(
+            {
+                "mode": "paper",
+                "runtime": {
+                    "symbol": "BTCUSDT",
+                    "timeframe": "15m",
+                    "poll_seconds": 60,
+                    "max_order_failures": 3,
+                    "max_state_failures": 2,
+                    "candle_limit": 260,
+                    "data_source": "synthetic",
+                    "broker": "paper",
+                },
+                "strategy": {
+                    "breakout_lookback": 20,
+                    "ema_period": 200,
+                    "atr_period": 14,
+                    "atr_stop_multiplier": 2.0,
+                    "trailing_atr_multiplier": 2.5,
+                    "external_factor_filter": "sideways",
+                },
+                "risk": {
+                    "risk_per_trade_pct": 0.005,
+                    "max_daily_loss_pct": 0.02,
+                    "max_simultaneous_positions": 1,
+                    "max_position_notional": 100000,
+                },
+                "paper": {
+                    "initial_balance": 100000,
+                    "fee_rate": 0.0004,
+                    "slippage_bps": 0,
+                },
+                "storage": {
+                    "sqlite_path": "data/trading.db",
+                    "log_path": "logs/bot.jsonl",
+                    "health_path": "logs/health.json",
+                    "sqlite_journal_mode": "MEMORY",
+                },
+            }
+        )
+
+
+def test_config_rejects_unknown_calendar_filter():
+    with pytest.raises(ValueError):
+        AppConfig.model_validate(
+            {
+                "mode": "paper",
+                "runtime": {
+                    "symbol": "BTCUSDT",
+                    "timeframe": "15m",
+                    "poll_seconds": 60,
+                    "max_order_failures": 3,
+                    "max_state_failures": 2,
+                    "candle_limit": 260,
+                    "data_source": "synthetic",
+                    "broker": "paper",
+                },
+                "strategy": {
+                    "breakout_lookback": 20,
+                    "ema_period": 200,
+                    "atr_period": 14,
+                    "atr_stop_multiplier": 2.0,
+                    "trailing_atr_multiplier": 2.5,
+                    "calendar_filter": "sq_week",
+                },
+                "risk": {
+                    "risk_per_trade_pct": 0.005,
+                    "max_daily_loss_pct": 0.02,
+                    "max_simultaneous_positions": 1,
+                    "max_position_notional": 100000,
+                },
+                "paper": {
+                    "initial_balance": 100000,
+                    "fee_rate": 0.0004,
+                    "slippage_bps": 0,
+                },
+                "storage": {
+                    "sqlite_path": "data/trading.db",
+                    "log_path": "logs/bot.jsonl",
+                    "health_path": "logs/health.json",
+                    "sqlite_journal_mode": "MEMORY",
+                },
+            }
+        )

@@ -9,6 +9,19 @@ def test_position_size_respects_stop_distance():
     assert quantity == 100.0
 
 
+def test_position_size_respects_contract_point_value():
+    engine = RiskEngine(
+        RiskConfig(
+            risk_per_trade_pct=0.005,
+            max_daily_loss_pct=0.02,
+            max_simultaneous_positions=1,
+            contract_point_value=10,
+        )
+    )
+    quantity = engine.size_position(entry_price=100, stop_price=95, equity=100000)
+    assert quantity == 10.0
+
+
 def test_daily_loss_limit_rejects_new_entries():
     engine = RiskEngine(RiskConfig(risk_per_trade_pct=0.005, max_daily_loss_pct=0.02, max_simultaneous_positions=1))
     approval = engine.validate(
@@ -55,3 +68,17 @@ def test_position_size_is_capped_by_per_contract_margin():
     )
     quantity = engine.size_position(entry_price=100, stop_price=50, equity=300000)
     assert quantity == 2
+
+
+def test_position_size_is_capped_by_notional_with_contract_point_value():
+    engine = RiskEngine(
+        RiskConfig(
+            risk_per_trade_pct=0.5,
+            max_daily_loss_pct=0.02,
+            max_simultaneous_positions=1,
+            max_position_notional=300000,
+            contract_point_value=10,
+        )
+    )
+    quantity = engine.size_position(entry_price=30000, stop_price=29950, equity=300000)
+    assert quantity == 1.0

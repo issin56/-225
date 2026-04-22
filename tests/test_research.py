@@ -3,6 +3,8 @@ from pathlib import Path
 
 from kanekasegi.config import load_config
 from kanekasegi.main import run_research_grid
+import kanekasegi.research as research
+from kanekasegi.rule_lab import RuleCandidate
 
 
 HEADER = (
@@ -85,3 +87,39 @@ def test_run_research_grid_returns_ranked_results(tmp_path):
     assert result["timeframe"] == "15m"
     assert 1 <= len(result["best_by_win_rate"]) <= 5
     assert 1 <= len(result["best_by_profit"]) <= 5
+
+
+def test_candidate_names_are_unique():
+    names = [candidate.name for candidate in research._candidate_rules()]
+    assert len(names) == len(set(names))
+
+
+def test_select_candidates_rejects_duplicate_names(monkeypatch):
+    duplicate_candidates = [
+        RuleCandidate(
+            name="dup",
+            timeframe="5m",
+            breakout_lookback=2,
+            ema_period=2,
+            atr_period=2,
+            atr_stop_multiplier=1.0,
+            trailing_atr_multiplier=1.0,
+        ),
+        RuleCandidate(
+            name="dup",
+            timeframe="15m",
+            breakout_lookback=3,
+            ema_period=3,
+            atr_period=3,
+            atr_stop_multiplier=1.0,
+            trailing_atr_multiplier=1.0,
+        ),
+    ]
+    monkeypatch.setattr(research, "_candidate_rules", lambda: duplicate_candidates)
+
+    try:
+        research._select_candidates(["dup"])
+    except ValueError as exc:
+        assert "duplicate candidate names" in str(exc)
+    else:
+        raise AssertionError("expected duplicate candidate names error")

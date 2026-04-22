@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, time, timedelta
 
 from .config import StrategyConfig
 from .indicators import atr, closing_prices, ema, highest_high, lowest_low
 from .types import MarketCandle, PositionState, SessionType, Signal, SignalAction
+
+GOTOBI_DAYS = frozenset({5, 10, 15, 20, 25, 30})
 
 
 @dataclass(slots=True)
@@ -97,6 +99,10 @@ class BreakoutTrendStrategy:
             return False
         if candle.timestamp.weekday() not in set(self.config.allowed_weekdays):
             return False
+        if not self._supports_calendar_filter(candle.timestamp.date()):
+            return False
+        if not self._supports_prior_session_filter(candles):
+            return False
         if self.entry_start_time is not None and candle.timestamp.time() < self.entry_start_time:
             return False
         if self.entry_end_time is not None and candle.timestamp.time() > self.entry_end_time:
@@ -120,3 +126,75 @@ class BreakoutTrendStrategy:
         if raw is None:
             return None
         return time(hour=int(raw[:2]), minute=int(raw[3:]))
+
+    def _supports_calendar_filter(self, current_date: date) -> bool:
+        if self.config.calendar_filter == "all":
+            return True
+
+        is_gotobi = current_date in self._business_gotobi_days(current_date.year, current_date.month)
+        if self.config.calendar_filter == "gotobi_only":
+            return is_gotobi
+        if self.config.calendar_filter == "exclude_gotobi":
+            return not is_gotobi
+        is_sq = self._is_sq_day(current_date)
+        if self.config.calendar_filter == "sq_only":
+            return is_sq
+        if self.config.calendar_filter == "exclude_sq":
+            return not is_sq
+        return False
+
+    def _supports_prior_session_filter(self, candles: list[MarketCandle]) -> bool:
+        if self.config.prior_session_filter == "all":
+            return True
+
+        previous_change = self._previous_session_change(candles)
+        if previous_change is None:
+            return False
+
+        required_move = self.config.prior_session_min_move_ticks * self.config.tick_size
+        if self.config.prior_session_filter == "up":
+            return previous_change >= required_move
+        if self.config.prior_session_filter == "down":
+            return previous_change <= -required_move
+        return False
+
+    def _previous_session_change(self, candles: list[MarketCandle]) -> float | None:
+        if len(candles) < 2:
+            return None
+
+        current_session = candles[-1].session
+        previous_index = len(candles) - 2
+        while previous_index >= 0 and candles[previous_index].session == current_session:
+            previous_index -= 1
+        if previous_index < 0:
+            return None
+
+        previous_session = candles[previous_index].session
+        session_end = previous_index
+        while previous_index >= 0 and candles[previous_index].session == previous_session:
+            previous_index -= 1
+        session_start = previous_index + 1
+        if session_start > session_end:
+            return None
+        return candles[session_end].close - candles[session_start].open
+
+    def _business_gotobi_days(self, year: int, month: int) -> set[date]:
+        gotobi_days: set[date] = set()
+        for raw_day in GOTOBI_DAYS:
+            try:
+                current = date(year, month, raw_day)
+            except ValueError:
+                continue
+            while current.weekday() >= 5:
+                current -= timedelta(days=1)
+            gotobi_days.add(current)
+        return gotobi_days
+
+    def _is_sq_day(self, current_date: date) -> bool:
+        return current_date == self._second_friday(current_date.year, current_date.month)
+
+    def _second_friday(self, year: int, month: int) -> date:
+        current = date(year, month, 1)
+        while current.weekday() != 4:
+            current += timedelta(days=1)
+        return current + timedelta(days=7)
