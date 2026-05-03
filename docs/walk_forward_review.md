@@ -11,40 +11,40 @@ It preserves time order and focuses on out-of-sample behavior and overfitting de
 - step_months: `4`
 
 ## Optimization Method
-- method: `best_in_sample_candidate`
+- method: `fixed_candidate_set`
 - selection_metric: `score`
 - neighbor_count: `3`
 
 ## Candidate Set
+- `day_midday_long_prev_night_up_trail_ex_1_2_4_6_9_10_11`
+- `day_midday_long_prev_night_up_trail_only_6_prev_range_above_45_mon_wed_vix_up_02_t8`
+- `day_morning_short_mon_thu_prev_night_down_tight_stop_ex_9_10`
+- `both_fast_short_night_tue_fri_usdjpy_down_tp_ex_2_5_6_8_9_10_11_12`
+- `day_opening_short_range_fade_lb8_buf2_ex_1_2_4_6_7_8_10`
 - `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05`
-- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05_ex_sq_range_above_108`
-- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05_ex_sq_range_above_110`
-- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05_ex_sq_range_above_112`
-- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_04_ex_sq_range_above_110`
-- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_06_ex_sq_range_above_110`
 
 ## Summary
 - tested_windows: `4`
-- accepted_windows: `0`
-- total_test_profit: `3650.00`
-- average_test_win_rate: `0.1500`
-- worst_test_drawdown: `1200.00`
+- accepted_windows: `4`
+- total_test_profit: `133950.00`
+- average_test_win_rate: `0.5935`
+- worst_test_drawdown: `11500.00`
 
 ## OOS Distribution
 - count: `4`
-- mean: `912.5`
-- median: `0.0`
-- min: `0.0`
-- max: `3650.0`
-- stddev: `1580.4964`
+- mean: `33487.5`
+- median: `31075.0`
+- min: `28150.0`
+- max: `43650.0`
+- stddev: `6181.9672`
 
 ## Single Window Dependency
 - dominant_window_id: `wf_03`
-- dominant_share: `1.0`
-- warning: `True`
+- dominant_share: `0.3259`
+- warning: `False`
 
 ## Overfitting Signals
-- no strong overfitting signal detected from the current window audit
+- 1 windows showed IS/OOS ratio above 3.0, which can indicate fragile fit.
 
 ## Added Files
 - `wfo_trades_enriched.csv`: `output/wfo_trades_enriched.csv`
