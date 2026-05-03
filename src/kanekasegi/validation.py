@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 from copy import deepcopy
+from dataclasses import asdict
 from pathlib import Path
 
 from .config import AppConfig, load_config
+from .observability import summarize_trade_records, write_walk_forward_review
 from .portfolio_lab import simulate_portfolio
 from .research import _load_candles, _load_external_factors, _score_result, _select_candidates
 from .rule_lab import RuleCandidate, RuleLabResult, run_rule_lab
@@ -34,19 +36,31 @@ def _slice_candles_by_months(candles: list[MarketCandle], months: set[str]) -> l
     return [candle for candle in candles if _month_key(candle) in months]
 
 
-def _window_definitions(months: list[str], train_months: int, test_months: int, step_months: int) -> list[dict[str, object]]:
+def _window_definitions(
+    months: list[str],
+    train_months: int,
+    test_months: int,
+    step_months: int,
+    window_mode: str = "rolling",
+) -> list[dict[str, object]]:
     if train_months <= 0 or test_months <= 0 or step_months <= 0:
         raise ValueError("train_months, test_months, and step_months must be positive")
+    if window_mode not in {"rolling", "expanding"}:
+        raise ValueError("window_mode must be 'rolling' or 'expanding'")
     windows: list[dict[str, object]] = []
     start_index = 0
     while start_index + train_months + test_months <= len(months):
-        train = months[start_index : start_index + train_months]
+        if window_mode == "rolling":
+            train = months[start_index : start_index + train_months]
+        else:
+            train = months[: start_index + train_months]
         test = months[start_index + train_months : start_index + train_months + test_months]
         windows.append(
             {
                 "window_index": len(windows) + 1,
                 "train_months": train,
                 "test_months": test,
+                "window_mode": window_mode,
             }
         )
         start_index += step_months
@@ -62,6 +76,65 @@ def _latest_train_test_window(months: list[str], train_months: int, test_months:
         "train_months": months[max(0, split_index - train_months) : split_index],
         "test_months": months[split_index:],
     }
+
+
+def _window_bounds(candles: list[MarketCandle]) -> tuple[str | None, str | None]:
+    if not candles:
+        return None, None
+    ordered = sorted(candles, key=lambda candle: candle.timestamp)
+    return ordered[0].timestamp.isoformat(), ordered[-1].timestamp.isoformat()
+
+
+def _window_bounds_by_timeframe(candles_by_timeframe: dict[str, list[MarketCandle]]) -> tuple[str | None, str | None]:
+    merged = [candle for candles in candles_by_timeframe.values() for candle in candles]
+    return _window_bounds(merged)
+
+
+def _selection_tuple(payload: dict[str, object], selection_metric: str) -> tuple[float, ...]:
+    if selection_metric == "profit":
+        primary = float(payload["profit"])
+    elif selection_metric == "win_rate":
+        primary = float(payload["win_rate"])
+    elif selection_metric == "max_drawdown":
+        primary = -float(payload["max_drawdown"])
+    else:
+        primary = float(payload["score"])
+    return (
+        primary,
+        float(payload["profit"]),
+        -float(payload["max_drawdown"]),
+        int(payload["trades"]),
+        float(payload["win_rate"]),
+    )
+
+
+def _candidate_best_params(candidate: RuleCandidate) -> dict[str, object]:
+    return asdict(candidate)
+
+
+def _window_trade_metrics(result: RuleLabResult | object) -> dict[str, object]:
+    trade_records = getattr(result, "trade_records", [])
+    return summarize_trade_records(list(trade_records))
+
+
+def _is_oos_ratio(is_pnl: float, oos_pnl: float) -> float | None:
+    if abs(oos_pnl) < 1e-9:
+        return None
+    return is_pnl / oos_pnl
+
+
+def _parameter_stability_warning(
+    selected_oos_pnl: float,
+    neighbor_oos_pnls: list[float],
+) -> bool:
+    if not neighbor_oos_pnls:
+        return False
+    if any((selected_oos_pnl >= 0 > neighbor) or (selected_oos_pnl <= 0 < neighbor) for neighbor in neighbor_oos_pnls):
+        return True
+    if selected_oos_pnl == 0:
+        return any(abs(neighbor) > 0 for neighbor in neighbor_oos_pnls)
+    spread = max(abs(selected_oos_pnl - neighbor) for neighbor in neighbor_oos_pnls)
+    return spread > abs(selected_oos_pnl) * 0.5
 
 
 def _result_payload(candidate: RuleCandidate, result: RuleLabResult) -> dict[str, object]:
@@ -286,6 +359,9 @@ def run_candidate_walk_forward_validation(
     train_months: int = 12,
     test_months: int = 4,
     step_months: int = 4,
+    window_mode: str = "rolling",
+    selection_metric: str = "score",
+    neighbor_count: int = 3,
     min_train_trades: int = 30,
     min_test_trades: int = 10,
     min_test_profit: float = 0.0,
@@ -296,7 +372,7 @@ def run_candidate_walk_forward_validation(
     external_factors = _load_external_factors(base_config)
     candles_by_timeframe = _load_candles_by_timeframe(base_config, candidates)
     months = _ordered_months_by_timeframe(candles_by_timeframe)
-    windows = _window_definitions(months, train_months, test_months, step_months)
+    windows = _window_definitions(months, train_months, test_months, step_months, window_mode)
     candidate_summaries = {
         candidate.name: {
             "name": candidate.name,
@@ -311,6 +387,7 @@ def run_candidate_walk_forward_validation(
         for candidate in candidates
     }
     window_results: list[dict[str, object]] = []
+    oos_trade_records = []
 
     for window in windows:
         train_set = set(window["train_months"])
@@ -320,8 +397,10 @@ def run_candidate_walk_forward_validation(
             timeframe_candles = candles_by_timeframe[candidate.timeframe]
             train_candles = _slice_candles_by_months(timeframe_candles, train_set)
             test_candles = _slice_candles_by_months(timeframe_candles, test_set)
-            train_result = _result_payload(candidate, run_rule_lab(train_candles, base_config, [candidate], external_factors=external_factors)[0])
-            test_result = _result_payload(candidate, run_rule_lab(test_candles, base_config, [candidate], external_factors=external_factors)[0])
+            train_result_raw = run_rule_lab(train_candles, base_config, [candidate], external_factors=external_factors)[0]
+            test_result_raw = run_rule_lab(test_candles, base_config, [candidate], external_factors=external_factors)[0]
+            train_result = _result_payload(candidate, train_result_raw)
+            test_result = _result_payload(candidate, test_result_raw)
             train_accepted, train_reason = _candidate_rejection_reasons(
                 train_result,
                 min_trades=min_train_trades,
@@ -340,6 +419,7 @@ def run_candidate_walk_forward_validation(
             candidate_results.append(
                 {
                     "name": candidate.name,
+                    "candidate": candidate,
                     "accepted": accepted,
                     "train_accepted": train_accepted,
                     "train_rejection_reason": train_reason,
@@ -348,6 +428,8 @@ def run_candidate_walk_forward_validation(
                     "rejected_reasons": rejected_reasons,
                     "train": train_result,
                     "test": test_result,
+                    "train_result_raw": train_result_raw,
+                    "test_result_raw": test_result_raw,
                 }
             )
 
@@ -365,26 +447,67 @@ def run_candidate_walk_forward_validation(
             summary["total_train_profit"] = summary.get("total_train_profit", 0.0) + float(train_result["profit"])
             summary["total_train_trades"] = summary.get("total_train_trades", 0) + int(train_result["trades"])
 
+        ranked_by_is = sorted(
+            candidate_results,
+            key=lambda item: _selection_tuple(item["train"], selection_metric),
+            reverse=True,
+        )
+        selected = ranked_by_is[0]
+        selected_test_records = list(selected["test_result_raw"].trade_records)
+        oos_trade_records.extend(
+            [trade.__class__(**{**asdict(trade), "wf_window_id": _window_id(window)}) for trade in selected_test_records]
+        )
+        neighbor_slice = ranked_by_is[1 : 1 + max(0, neighbor_count - 1)]
+        neighbor_oos_pnls = [float(item["test"]["profit"]) for item in neighbor_slice]
+        train_start, train_end = _window_bounds(_slice_candles_by_months(candles_by_timeframe[selected["candidate"].timeframe], train_set))
+        test_start, test_end = _window_bounds(_slice_candles_by_months(candles_by_timeframe[selected["candidate"].timeframe], test_set))
+        is_metrics = _window_trade_metrics(selected["train_result_raw"])
+        oos_metrics = _window_trade_metrics(selected["test_result_raw"])
+        selected_window = {
+            "window_index": window["window_index"],
+            "window_id": _window_id(window),
+            "window_mode": window_mode,
+            "train_months": window["train_months"],
+            "test_months": window["test_months"],
+            "train_start": train_start,
+            "train_end": train_end,
+            "test_start": test_start,
+            "test_end": test_end,
+            "accepted": selected["accepted"],
+            "train_accepted": selected["train_accepted"],
+            "train_rejection_reason": selected["train_rejection_reason"],
+            "test_accepted": selected["test_accepted"],
+            "test_rejection_reason": selected["test_rejection_reason"],
+            "rejected_reasons": list(selected["rejected_reasons"]),
+            "optimization_method": "best_in_sample_candidate",
+            "best_params": _candidate_best_params(selected["candidate"]),
+            "selected_candidate": selected["name"],
+            "selected_train_score": float(selected["train"]["score"]),
+            "neighbor_candidates": [
+                {
+                    "name": item["name"],
+                    "train_score": float(item["train"]["score"]),
+                    "oos_profit": float(item["test"]["profit"]),
+                }
+                for item in neighbor_slice
+            ],
+            "parameter_stability_warning": _parameter_stability_warning(float(selected["test"]["profit"]), neighbor_oos_pnls),
+            "is_metrics": is_metrics,
+            "oos_metrics": oos_metrics,
+            "is_oos_ratio": _is_oos_ratio(float(selected["train"]["profit"]), float(selected["test"]["profit"])),
+            "train": selected["train"],
+            "test": selected["test"],
+            "results": [
+                {
+                    key: value
+                    for key, value in item.items()
+                    if key not in {"candidate", "train_result_raw", "test_result_raw"}
+                }
+                for item in ranked_by_is
+            ],
+        }
         window_results.append(
-            {
-                "window_index": window["window_index"],
-                "train_months": window["train_months"],
-                "test_months": window["test_months"],
-                "results": sorted(
-                    candidate_results,
-                    key=lambda item: (
-                        item["accepted"],
-                        item["test_accepted"],
-                        item["train_accepted"],
-                        float(item["test"]["profit"]),
-                        -float(item["test"]["max_drawdown"]),
-                        int(item["test"]["trades"]),
-                        float(item["train"]["profit"]),
-                        -float(item["train"]["max_drawdown"]),
-                    ),
-                    reverse=True,
-                ),
-            }
+            selected_window
         )
 
     summary_rows = []
@@ -419,13 +542,28 @@ def run_candidate_walk_forward_validation(
         ),
         reverse=True,
     )
+    positive_windows = [
+        (window["window_id"], float(window.get("oos_metrics", {}).get("net_pnl", 0.0)))
+        for window in window_results
+        if float(window.get("oos_metrics", {}).get("net_pnl", 0.0)) > 0
+    ]
+    total_positive = sum(value for _, value in positive_windows)
+    dominant_window_id = None
+    if positive_windows and total_positive > 0:
+        dominant_window_id, _ = max(positive_windows, key=lambda item: item[1])
+    for window in window_results:
+        window["single_window_dependency_flag"] = window["window_id"] == dominant_window_id and total_positive > 0
 
     return {
         "mode": "candidate_walk_forward",
+        "candidate_names": [candidate.name for candidate in candidates],
         "months": months,
         "train_months": train_months,
         "test_months": test_months,
         "step_months": step_months,
+        "window_mode": window_mode,
+        "selection_metric": selection_metric,
+        "neighbor_count": neighbor_count,
         "criteria": {
             "min_train_trades": min_train_trades,
             "min_test_trades": min_test_trades,
@@ -435,6 +573,22 @@ def run_candidate_walk_forward_validation(
         },
         "windows": window_results,
         "summary": summary_rows,
+        "aggregate_summary": {
+            "tested_windows": len(window_results),
+            "accepted_windows": sum(1 for window in window_results if window["accepted"]),
+            "accepted_test_windows": sum(1 for window in window_results if window["test_accepted"]),
+            "positive_test_windows": sum(1 for window in window_results if float(window["oos_metrics"].get("net_pnl", 0.0)) > 0),
+            "total_test_profit": round(sum(float(window["oos_metrics"].get("net_pnl", 0.0)) for window in window_results), 2),
+            "average_test_win_rate": round(
+                sum(float(window["test"]["win_rate"]) for window in window_results) / max(1, len(window_results)),
+                4,
+            ),
+            "worst_test_drawdown": round(
+                max((float(window["oos_metrics"].get("max_drawdown", 0.0)) for window in window_results), default=0.0),
+                2,
+            ),
+        },
+        "_oos_trade_records": oos_trade_records,
     }
 
 
@@ -446,17 +600,21 @@ def run_portfolio_walk_forward_validation(
     train_months: int = 12,
     test_months: int = 4,
     step_months: int = 4,
+    window_mode: str = "rolling",
+    selection_metric: str = "score",
+    neighbor_count: int = 3,
     min_train_trades: int = 30,
     min_test_trades: int = 10,
     min_test_profit: float = 0.0,
     min_test_win_rate: float = 0.0,
     max_test_drawdown: float | None = None,
+    include_trade_records: bool = False,
 ) -> dict[str, object]:
     candidates = _select_candidates(candidate_names)
     external_factors = _load_external_factors(base_config)
     candles_by_timeframe = _load_candles_by_timeframe(base_config, candidates)
     months = _ordered_months_by_timeframe(candles_by_timeframe)
-    windows = _window_definitions(months, train_months, test_months, step_months)
+    windows = _window_definitions(months, train_months, test_months, step_months, window_mode)
     window_results: list[dict[str, object]] = []
     accepted_windows = 0
     accepted_test_windows = 0
@@ -466,6 +624,7 @@ def run_portfolio_walk_forward_validation(
     total_test_drawdown = 0.0
     worst_test_drawdown = 0.0
     total_test_trades = 0
+    oos_trade_records = []
 
     for window in windows:
         train_set = set(window["train_months"])
@@ -478,12 +637,24 @@ def run_portfolio_walk_forward_validation(
             timeframe: _slice_candles_by_months(candles, test_set)
             for timeframe, candles in candles_by_timeframe.items()
         }
-        train_result = _portfolio_payload(
-            simulate_portfolio(train_candles_by_timeframe, base_config, candidates, external_factors=external_factors)
+        train_result_raw = simulate_portfolio(
+            train_candles_by_timeframe,
+            base_config,
+            candidates,
+            external_factors=external_factors,
+            wf_window_id=f"wf_{window['window_index']:02d}_train",
         )
-        test_result = _portfolio_payload(
-            simulate_portfolio(test_candles_by_timeframe, base_config, candidates, external_factors=external_factors)
+        test_result_raw = simulate_portfolio(
+            test_candles_by_timeframe,
+            base_config,
+            candidates,
+            external_factors=external_factors,
+            wf_window_id=_window_id(window),
         )
+        train_result = _portfolio_payload(train_result_raw)
+        test_result = _portfolio_payload(test_result_raw)
+        is_metrics = summarize_trade_records(list(train_result_raw.trade_records))
+        oos_metrics = summarize_trade_records(list(test_result_raw.trade_records))
         train_accepted, train_reason = _candidate_rejection_reasons(
             train_result,
             min_trades=min_train_trades,
@@ -515,23 +686,52 @@ def run_portfolio_walk_forward_validation(
         total_test_drawdown += float(test_result["max_drawdown"])
         worst_test_drawdown = max(worst_test_drawdown, float(test_result["max_drawdown"]))
         total_test_trades = total_test_trades + int(test_result["trades"])
+        if include_trade_records:
+            oos_trade_records.extend(test_result_raw.trade_records)
+        train_start, train_end = _window_bounds_by_timeframe(train_candles_by_timeframe)
+        test_start, test_end = _window_bounds_by_timeframe(test_candles_by_timeframe)
         window_results.append(
             {
                 "window_index": window["window_index"],
+                "window_id": _window_id(window),
+                "window_mode": window_mode,
                 "train_months": window["train_months"],
                 "test_months": window["test_months"],
+                "train_start": train_start,
+                "train_end": train_end,
+                "test_start": test_start,
+                "test_end": test_end,
                 "accepted": accepted,
                 "train_accepted": train_accepted,
                 "train_rejection_reason": train_reason,
                 "test_accepted": test_accepted,
                 "test_rejection_reason": test_reason,
                 "rejected_reasons": rejected_reasons,
+                "optimization_method": "fixed_candidate_set",
+                "best_params": {"candidate_names": [candidate.name for candidate in candidates]},
+                "parameter_stability_warning": False,
+                "neighbor_candidates": [],
+                "is_metrics": is_metrics,
+                "oos_metrics": oos_metrics,
+                "is_oos_ratio": _is_oos_ratio(float(train_result["profit"]), float(test_result["profit"])),
                 "train": train_result,
                 "test": test_result,
             }
         )
 
     divisor = max(1, len(window_results))
+    positive_windows = [
+        (window["window_id"], float(window.get("oos_metrics", {}).get("net_pnl", 0.0)))
+        for window in window_results
+        if float(window.get("oos_metrics", {}).get("net_pnl", 0.0)) > 0
+    ]
+    total_positive = sum(value for _, value in positive_windows)
+    dominant_window_id = None
+    if positive_windows and total_positive > 0:
+        dominant_window_id, _ = max(positive_windows, key=lambda item: item[1])
+    for window in window_results:
+        window["single_window_dependency_flag"] = window["window_id"] == dominant_window_id and total_positive > 0
+
     return {
         "mode": "portfolio_walk_forward",
         "candidate_names": [candidate.name for candidate in candidates],
@@ -539,6 +739,9 @@ def run_portfolio_walk_forward_validation(
         "train_months": train_months,
         "test_months": test_months,
         "step_months": step_months,
+        "window_mode": window_mode,
+        "selection_metric": selection_metric,
+        "neighbor_count": neighbor_count,
         "criteria": {
             "min_train_trades": min_train_trades,
             "min_test_trades": min_test_trades,
@@ -560,6 +763,7 @@ def run_portfolio_walk_forward_validation(
             "worst_test_drawdown": round(worst_test_drawdown, 2),
             "total_test_trades": total_test_trades,
         },
+        **({"_oos_trade_records": oos_trade_records} if include_trade_records else {}),
     }
 
 
@@ -569,13 +773,16 @@ def main() -> None:
     parser.add_argument("--config", default="config.backtest-nk225micro.yaml")
     parser.add_argument("--candidate", action="append", required=True)
     parser.add_argument("--mode", choices=("candidate-train-test", "candidate-walk-forward", "portfolio-walk-forward"), default="candidate-train-test")
-    parser.add_argument("--train-months", type=int, default=12)
-    parser.add_argument("--test-months", type=int, default=4)
-    parser.add_argument("--step-months", type=int, default=4)
-    parser.add_argument("--min-train-trades", type=int, default=30)
-    parser.add_argument("--min-test-trades", type=int, default=10)
-    parser.add_argument("--min-test-profit", type=float, default=0.0)
-    parser.add_argument("--min-test-win-rate", type=float, default=0.0)
+    parser.add_argument("--train-months", type=int)
+    parser.add_argument("--test-months", type=int)
+    parser.add_argument("--step-months", type=int)
+    parser.add_argument("--window-mode", choices=("rolling", "expanding"))
+    parser.add_argument("--selection-metric", choices=("score", "profit", "win_rate", "max_drawdown"))
+    parser.add_argument("--neighbor-count", type=int)
+    parser.add_argument("--min-train-trades", type=int)
+    parser.add_argument("--min-test-trades", type=int)
+    parser.add_argument("--min-test-profit", type=float)
+    parser.add_argument("--min-test-win-rate", type=float)
     parser.add_argument("--max-test-drawdown", type=float)
     parser.add_argument("--output")
     args = parser.parse_args()
@@ -584,54 +791,100 @@ def main() -> None:
     if config.mode.value != "backtest":
         raise ValueError("validation requires mode=backtest")
 
+    train_months = args.train_months if args.train_months is not None else config.walk_forward.train_months
+    test_months = args.test_months if args.test_months is not None else config.walk_forward.test_months
+    step_months = args.step_months if args.step_months is not None else config.walk_forward.step_months
+    window_mode = args.window_mode or config.walk_forward.window_mode
+    selection_metric = args.selection_metric or config.walk_forward.selection_metric
+    neighbor_count = args.neighbor_count if args.neighbor_count is not None else config.walk_forward.neighbor_count
+    min_train_trades = args.min_train_trades if args.min_train_trades is not None else config.walk_forward.min_train_trades
+    min_test_trades = args.min_test_trades if args.min_test_trades is not None else config.walk_forward.min_test_trades
+    min_test_profit = args.min_test_profit if args.min_test_profit is not None else config.walk_forward.min_test_profit
+    min_test_win_rate = args.min_test_win_rate if args.min_test_win_rate is not None else config.walk_forward.min_test_win_rate
+    max_test_drawdown = args.max_test_drawdown if args.max_test_drawdown is not None else config.walk_forward.max_test_drawdown
+
     if args.mode == "candidate-train-test":
         result = run_candidate_train_test_validation(
             args.config,
             config,
             candidate_names=args.candidate,
-            train_months=args.train_months,
-            test_months=args.test_months,
-            min_train_trades=args.min_train_trades,
-            min_test_trades=args.min_test_trades,
-            min_test_profit=args.min_test_profit,
-            min_test_win_rate=args.min_test_win_rate,
-            max_test_drawdown=args.max_test_drawdown,
+            train_months=train_months,
+            test_months=test_months,
+            min_train_trades=min_train_trades,
+            min_test_trades=min_test_trades,
+            min_test_profit=min_test_profit,
+            min_test_win_rate=min_test_win_rate,
+            max_test_drawdown=max_test_drawdown,
         )
     elif args.mode == "candidate-walk-forward":
         result = run_candidate_walk_forward_validation(
             args.config,
             config,
             candidate_names=args.candidate,
-            train_months=args.train_months,
-            test_months=args.test_months,
-            step_months=args.step_months,
-            min_train_trades=args.min_train_trades,
-            min_test_trades=args.min_test_trades,
-            min_test_profit=args.min_test_profit,
-            min_test_win_rate=args.min_test_win_rate,
-            max_test_drawdown=args.max_test_drawdown,
+            train_months=train_months,
+            test_months=test_months,
+            step_months=step_months,
+            window_mode=window_mode,
+            selection_metric=selection_metric,
+            neighbor_count=neighbor_count,
+            min_train_trades=min_train_trades,
+            min_test_trades=min_test_trades,
+            min_test_profit=min_test_profit,
+            min_test_win_rate=min_test_win_rate,
+            max_test_drawdown=max_test_drawdown,
         )
     else:
         result = run_portfolio_walk_forward_validation(
             args.config,
             config,
             candidate_names=args.candidate,
-            train_months=args.train_months,
-            test_months=args.test_months,
-            step_months=args.step_months,
-            min_train_trades=args.min_train_trades,
-            min_test_trades=args.min_test_trades,
-            min_test_profit=args.min_test_profit,
-            min_test_win_rate=args.min_test_win_rate,
-            max_test_drawdown=args.max_test_drawdown,
+            train_months=train_months,
+            test_months=test_months,
+            step_months=step_months,
+            window_mode=window_mode,
+            selection_metric=selection_metric,
+            neighbor_count=neighbor_count,
+            min_train_trades=min_train_trades,
+            min_test_trades=min_test_trades,
+            min_test_profit=min_test_profit,
+            min_test_win_rate=min_test_win_rate,
+            max_test_drawdown=max_test_drawdown,
+            include_trade_records=True,
         )
 
+    if args.mode in {"candidate-walk-forward", "portfolio-walk-forward"}:
+        oos_trade_records = list(result.pop("_oos_trade_records", []))
+        summary_payload = dict(result["aggregate_summary"]) if args.mode == "candidate-walk-forward" else dict(result["summary"])
+        result["observability_outputs"] = write_walk_forward_review(
+            Path("docs"),
+            Path("output"),
+            mode=str(result["mode"]),
+            candidate_names=list(result["candidate_names"]),
+            windows=list(result["windows"]),
+            summary=summary_payload,
+            trade_records=oos_trade_records,
+            settings={
+                "window_mode": result["window_mode"],
+                "train_months": result["train_months"],
+                "test_months": result["test_months"],
+                "step_months": result["step_months"],
+                "selection_metric": result.get("selection_metric", "score"),
+                "neighbor_count": result.get("neighbor_count", 0),
+            },
+            optimization_method="best_in_sample_candidate"
+            if args.mode == "candidate-walk-forward"
+            else "fixed_candidate_set",
+        )
     rendered = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(rendered, encoding="utf-8")
     print(rendered)
+
+
+def _window_id(window: dict[str, object]) -> str:
+    return f"wf_{int(window['window_index']):02d}"
 
 
 if __name__ == "__main__":

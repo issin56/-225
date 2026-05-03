@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, time, timedelta
 
 from .config import AppConfig
 from .external_factors import ExternalFactors
 from .indicators import atr_series, closing_prices, ema_series, highest_high_series, lowest_low_series
+from .observability import EnrichedTradeRecord, TradeSeed, build_trade_seed, finalize_trade_record
 from .types import MarketCandle, SessionType, SignalAction
 
 GOTOBI_DAYS = frozenset({5, 10, 15, 20, 25, 30})
@@ -64,6 +65,7 @@ class RuleLabResult:
     losing_months: int
     average_monthly_pnl: float
     active_months: int
+    trade_records: list[EnrichedTradeRecord] = field(default_factory=list, repr=False)
 
 
 def _parse_clock(raw: str | None) -> time | None:
@@ -460,12 +462,14 @@ def simulate_candidate(
     trailing_stop: float | None = None
     take_profit_price: float | None = None
     bars_in_trade = 0
+    trade_seed: TradeSeed | None = None
     all_months = {_month_key(candle) for candle in candles}
     prices = closing_prices(candles)
     ema_values = ema_series(prices, candidate.ema_period)
     atr_values = atr_series(candles, candidate.atr_period)
     breakout_high_values = highest_high_series(candles, candidate.breakout_lookback)
     breakout_low_values = lowest_low_series(candles, candidate.breakout_lookback)
+    trade_records: list[EnrichedTradeRecord] = []
 
     for index in range(min_required, len(candles)):
         current = candles[index]
@@ -509,6 +513,15 @@ def simulate_candidate(
                     losses += 1
                 monthly_key = _month_key(current)
                 monthly_pnl[monthly_key] = monthly_pnl.get(monthly_key, 0.0) + pnl
+                if trade_seed is not None:
+                    trade_records.append(
+                        finalize_trade_record(
+                            config,
+                            trade_seed,
+                            exit_candle=current,
+                            exit_market_price=last_close,
+                        )
+                    )
                 side = None
                 quantity = 0
                 entry_price = 0.0
@@ -516,6 +529,7 @@ def simulate_candidate(
                 trailing_stop = None
                 take_profit_price = None
                 bars_in_trade = 0
+                trade_seed = None
             continue
 
         if side == SignalAction.SHORT:
@@ -540,6 +554,15 @@ def simulate_candidate(
                     losses += 1
                 monthly_key = _month_key(current)
                 monthly_pnl[monthly_key] = monthly_pnl.get(monthly_key, 0.0) + pnl
+                if trade_seed is not None:
+                    trade_records.append(
+                        finalize_trade_record(
+                            config,
+                            trade_seed,
+                            exit_candle=current,
+                            exit_market_price=last_close,
+                        )
+                    )
                 side = None
                 quantity = 0
                 entry_price = 0.0
@@ -547,6 +570,7 @@ def simulate_candidate(
                 trailing_stop = None
                 take_profit_price = None
                 bars_in_trade = 0
+                trade_seed = None
             continue
 
         if _entry_signal(candidate, SignalAction.LONG, last_close, trend_ema, breakout_high, breakout_low) and _supports_entry(
@@ -572,6 +596,18 @@ def simulate_candidate(
                     else None
                 )
                 bars_in_trade = 0
+                trade_seed = build_trade_seed(
+                    config,
+                    rule_id=candidate.name,
+                    strategy_name=candidate.name,
+                    side=SignalAction.LONG,
+                    entry_candle=current,
+                    entry_market_price=last_close,
+                    qty=contracts,
+                    atr_value=current_atr,
+                    trend_ema=trend_ema,
+                    tick_size=candidate.tick_size,
+                )
             continue
 
         if _entry_signal(candidate, SignalAction.SHORT, last_close, trend_ema, breakout_high, breakout_low) and _supports_entry(
@@ -597,6 +633,18 @@ def simulate_candidate(
                     else None
                 )
                 bars_in_trade = 0
+                trade_seed = build_trade_seed(
+                    config,
+                    rule_id=candidate.name,
+                    strategy_name=candidate.name,
+                    side=SignalAction.SHORT,
+                    entry_candle=current,
+                    entry_market_price=last_close,
+                    qty=contracts,
+                    atr_value=current_atr,
+                    trend_ema=trend_ema,
+                    tick_size=candidate.tick_size,
+                )
 
     if side is not None and quantity > 0:
         last_close = candles[-1].close
@@ -609,6 +657,15 @@ def simulate_candidate(
             losses += 1
         monthly_key = _month_key(candles[-1])
         monthly_pnl[monthly_key] = monthly_pnl.get(monthly_key, 0.0) + pnl
+        if trade_seed is not None:
+            trade_records.append(
+                finalize_trade_record(
+                    config,
+                    trade_seed,
+                    exit_candle=candles[-1],
+                    exit_market_price=last_close,
+                )
+            )
 
     profitable_months = sum(1 for value in monthly_pnl.values() if value > 0)
     losing_months = sum(1 for value in monthly_pnl.values() if value < 0)
@@ -627,4 +684,5 @@ def simulate_candidate(
         losing_months=losing_months,
         average_monthly_pnl=average_monthly_pnl,
         active_months=len(all_months),
+        trade_records=trade_records,
     )

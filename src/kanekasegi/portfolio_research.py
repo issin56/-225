@@ -6,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from .config import AppConfig, load_config
+from .observability import OBSERVABILITY_OUTPUT_FILES, write_pnl_breakdown_csvs, write_pnl_dashboard, write_trade_csv
 from .portfolio_lab import simulate_portfolio
 from .research import _load_candles, _load_external_factors, _select_candidates
 from .runtime_env import load_dotenv
@@ -16,6 +17,7 @@ def run_portfolio_research(
     base_config: AppConfig,
     *,
     candidate_names: list[str],
+    include_trade_records: bool = False,
 ) -> dict[str, object]:
     selected_candidates = _select_candidates(candidate_names)
     external_factors = _load_external_factors(base_config)
@@ -38,7 +40,7 @@ def run_portfolio_research(
         }
         for name, stats in result.strategy_stats.items()
     }
-    return {
+    payload = {
         "candidate_names": result.candidate_names,
         "ending_equity": round(result.ending_equity, 2),
         "profit": round(result.profit, 2),
@@ -55,6 +57,42 @@ def run_portfolio_research(
         "monthly_pnl": {month: round(pnl, 2) for month, pnl in result.monthly_pnl.items()},
         "strategy_breakdown": strategy_breakdown,
     }
+    if include_trade_records:
+        payload["_trade_records"] = result.trade_records
+    return payload
+
+
+def write_portfolio_observability_outputs(
+    result: dict[str, object],
+    *,
+    trade_records,
+    output_dir: Path,
+    docs_dir: Path,
+) -> dict[str, str]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    trade_csv_path = output_dir / OBSERVABILITY_OUTPUT_FILES["trades_csv"]
+    write_trade_csv(trade_csv_path, trade_records)
+    breakdown_paths = write_pnl_breakdown_csvs(output_dir, list(trade_records))
+    dashboard_path = write_pnl_dashboard(
+        docs_dir,
+        output_dir,
+        portfolio_name=" + ".join(result["candidate_names"]),
+        trades=list(trade_records),
+        profit=float(result["profit"]),
+        max_drawdown=float(result["max_drawdown"]),
+        win_rate=float(result["win_rate"]),
+        trade_csv_path=trade_csv_path,
+        breakdown_paths=breakdown_paths,
+    )
+    return {
+        "trades_csv": str(trade_csv_path),
+        **breakdown_paths,
+        "pnl_dashboard": dashboard_path,
+        "equity_curve_svg": str(output_dir / OBSERVABILITY_OUTPUT_FILES["equity_curve_svg"]),
+        "rule_pnl_svg": str(output_dir / OBSERVABILITY_OUTPUT_FILES["rule_pnl_svg"]),
+        "session_heatmap_svg": str(output_dir / OBSERVABILITY_OUTPUT_FILES["session_heatmap_svg"]),
+    }
 
 
 def main() -> None:
@@ -68,7 +106,14 @@ def main() -> None:
     config = load_config(args.config)
     if config.mode.value != "backtest":
         raise ValueError("portfolio research requires mode=backtest")
-    result = run_portfolio_research(args.config, config, candidate_names=args.candidate)
+    result = run_portfolio_research(args.config, config, candidate_names=args.candidate, include_trade_records=True)
+    trade_records = list(result.pop("_trade_records", []))
+    result["observability_outputs"] = write_portfolio_observability_outputs(
+        result,
+        trade_records=trade_records,
+        output_dir=Path("output"),
+        docs_dir=Path("docs"),
+    )
     rendered = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         output_path = Path(args.output)

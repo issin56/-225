@@ -33,6 +33,17 @@ paper:
   initial_balance: 300000
   fee_rate: 0.0
   slippage_bps: 0
+walk_forward:
+  window_mode: rolling
+  train_months: 12
+  test_months: 4
+  step_months: 4
+  selection_metric: score
+  neighbor_count: 3
+  min_train_trades: 30
+  min_test_trades: 10
+  min_test_profit: 0.0
+  min_test_win_rate: 0.0
 storage:
   sqlite_path: data/backtest-nk225micro.db
   log_path: logs/backtest-nk225micro.jsonl

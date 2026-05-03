@@ -35,6 +35,12 @@ py -m kanekasegi.main --config config.yaml --validate-config
 py -m kanekasegi.main --config config.backtest.yaml
 ```
 
+Nikkei 225 walk-forward audit example:
+
+```powershell
+py -m kanekasegi.validation --config config.backtest-nk225micro.macro.lot3.yaml --mode portfolio-walk-forward --candidate <rule-id> --candidate <rule-id>
+```
+
 ## FX Foundation
 
 The FX validation foundation lives in the top-level `src/` packages:

@@ -117,6 +117,11 @@ def test_candidate_walk_forward_validation_summarizes_windows(monkeypatch):
     assert len(result["windows"]) == 4
     assert result["summary"][0]["name"] == "simple_long"
     assert result["summary"][0]["accepted_windows"] == 4
+    assert result["aggregate_summary"]["tested_windows"] == 4
+    assert result["windows"][0]["best_params"]["name"] == "simple_long"
+    assert "is_metrics" in result["windows"][0]
+    assert "oos_metrics" in result["windows"][0]
+    assert result["_oos_trade_records"]
 
 
 def test_portfolio_walk_forward_validation_returns_summary(monkeypatch):
@@ -140,6 +145,30 @@ def test_portfolio_walk_forward_validation_returns_summary(monkeypatch):
     assert result["summary"]["tested_windows"] == 4
     assert result["summary"]["accepted_windows"] == 4
     assert result["summary"]["average_test_profit"] > 0
+    assert result["windows"][0]["best_params"]["candidate_names"] == ["simple_long"]
+    assert result["windows"][0]["window_mode"] == "rolling"
+
+
+def test_portfolio_walk_forward_validation_can_return_oos_trade_records(monkeypatch):
+    candidate = _simple_candidate()
+    monkeypatch.setattr(validation, "_select_candidates", lambda names: [candidate])
+    monkeypatch.setattr(validation, "_load_candles", lambda config: _monthly_candles())
+    monkeypatch.setattr(validation, "_load_external_factors", lambda config: None)
+
+    result = validation.run_portfolio_walk_forward_validation(
+        "config.backtest-nk225micro.yaml",
+        _build_config(),
+        candidate_names=["simple_long"],
+        train_months=3,
+        test_months=2,
+        step_months=1,
+        min_train_trades=1,
+        min_test_trades=1,
+        include_trade_records=True,
+    )
+
+    assert result["_oos_trade_records"]
+    assert all(trade.wf_window_id for trade in result["_oos_trade_records"])
 
 
 def test_candidate_rejection_reasons_can_reject_large_drawdown():
@@ -158,3 +187,17 @@ def test_candidate_rejection_reasons_can_reject_large_drawdown():
 
     assert accepted is False
     assert reason == "drawdown_above_threshold"
+
+
+def test_window_definitions_support_expanding_mode():
+    windows = validation._window_definitions(
+        ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06"],
+        train_months=2,
+        test_months=1,
+        step_months=1,
+        window_mode="expanding",
+    )
+
+    assert windows[0]["train_months"] == ["2025-01", "2025-02"]
+    assert windows[1]["train_months"] == ["2025-01", "2025-02", "2025-03"]
+    assert windows[2]["train_months"] == ["2025-01", "2025-02", "2025-03", "2025-04"]

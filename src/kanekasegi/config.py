@@ -147,6 +147,38 @@ class PaperConfig(BaseModel):
     slippage_bps: float = 3.0
 
 
+class WalkForwardConfig(BaseModel):
+    window_mode: str = "rolling"
+    train_months: int = 12
+    test_months: int = 4
+    step_months: int = 4
+    selection_metric: str = "score"
+    neighbor_count: int = 3
+    min_train_trades: int = 30
+    min_test_trades: int = 10
+    min_test_profit: float = 0.0
+    min_test_win_rate: float = 0.0
+    max_test_drawdown: float | None = None
+
+    @model_validator(mode="after")
+    def validate_walk_forward(self) -> "WalkForwardConfig":
+        if self.window_mode not in {"rolling", "expanding"}:
+            raise ValueError("walk_forward.window_mode must be 'rolling' or 'expanding'")
+        if self.train_months <= 0 or self.test_months <= 0 or self.step_months <= 0:
+            raise ValueError("walk_forward train/test/step months must be positive")
+        if self.selection_metric not in {"score", "profit", "win_rate", "max_drawdown"}:
+            raise ValueError("walk_forward.selection_metric must be score, profit, win_rate, or max_drawdown")
+        if self.neighbor_count < 1:
+            raise ValueError("walk_forward.neighbor_count must be at least 1")
+        if self.min_train_trades < 0 or self.min_test_trades < 0:
+            raise ValueError("walk_forward min trades must be non-negative")
+        if not 0 <= self.min_test_win_rate <= 1:
+            raise ValueError("walk_forward.min_test_win_rate must be between 0 and 1")
+        if self.max_test_drawdown is not None and self.max_test_drawdown < 0:
+            raise ValueError("walk_forward.max_test_drawdown must be non-negative when set")
+        return self
+
+
 class StorageConfig(BaseModel):
     sqlite_path: str = "data/trading.db"
     log_path: str = "logs/bot.jsonl"
@@ -166,6 +198,7 @@ class AppConfig(BaseModel):
     strategy: StrategyConfig
     risk: RiskConfig
     paper: PaperConfig
+    walk_forward: WalkForwardConfig = Field(default_factory=WalkForwardConfig)
     storage: StorageConfig
 
 

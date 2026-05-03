@@ -81,3 +81,36 @@ def test_run_portfolio_research_returns_breakdown(monkeypatch):
     assert result["monthly_pnl"]
     assert result["strategy_breakdown"]["simple_long"]["trades"] > 0
     assert result["strategy_breakdown"]["simple_long"]["monthly_pnl"]
+
+
+def test_run_portfolio_research_can_return_trade_records(monkeypatch):
+    candidate = RuleCandidate(
+        name="simple_long",
+        timeframe="5m",
+        breakout_lookback=2,
+        ema_period=2,
+        atr_period=2,
+        atr_stop_multiplier=1.0,
+        trailing_atr_multiplier=1.0,
+        session_filter="day",
+        direction_filter="long_only",
+        use_trend_filter=False,
+        exit_on_trend_reversal=False,
+        use_trailing_stop=False,
+        fixed_stop_ticks=4,
+        tick_size=1.0,
+        time_stop_bars=1,
+    )
+
+    monkeypatch.setattr(portfolio_research, "_select_candidates", lambda names: [candidate])
+    monkeypatch.setattr(portfolio_research, "_load_candles", lambda config: _candles())
+
+    result = portfolio_research.run_portfolio_research(
+        "config.backtest-nk225micro.yaml",
+        _build_config(),
+        candidate_names=["simple_long"],
+        include_trade_records=True,
+    )
+
+    assert "_trade_records" in result
+    assert result["_trade_records"]

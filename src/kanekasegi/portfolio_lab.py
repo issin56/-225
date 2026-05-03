@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from .config import AppConfig
 from .external_factors import ExternalFactors
 from .indicators import atr_series, closing_prices, ema_series, highest_high_series, lowest_low_series
+from .observability import EnrichedTradeRecord, TradeSeed, build_trade_seed, finalize_trade_record
 from .rule_lab import (
     RuleCandidate,
     _entry_signal,
@@ -44,6 +45,7 @@ class PortfolioLabResult:
     active_months: int
     monthly_pnl: dict[str, float]
     strategy_stats: dict[str, StrategyStats] = field(default_factory=dict)
+    trade_records: list[EnrichedTradeRecord] = field(default_factory=list, repr=False)
 
 
 @dataclass(slots=True)
@@ -57,6 +59,7 @@ class _OpenPosition:
     take_profit_price: float | None
     bars_in_trade: int = 0
     last_price: float = 0.0
+    trade_seed: TradeSeed | None = None
 
 
 @dataclass(slots=True)
@@ -107,6 +110,18 @@ def _candidate_entry(
                 if candidate.take_profit_ticks is not None
                 else None
             )
+            trade_seed = build_trade_seed(
+                config,
+                rule_id=candidate.name,
+                strategy_name=candidate.name,
+                side=SignalAction.LONG,
+                entry_candle=current,
+                entry_market_price=last_close,
+                qty=contracts,
+                atr_value=current_atr,
+                trend_ema=trend_ema,
+                tick_size=candidate.tick_size,
+            )
             return _OpenPosition(
                 candidate=candidate,
                 side=SignalAction.LONG,
@@ -116,6 +131,7 @@ def _candidate_entry(
                 trailing_stop=proposed_stop,
                 take_profit_price=take_profit_price,
                 last_price=last_close,
+                trade_seed=trade_seed,
             )
 
     if _entry_signal(candidate, SignalAction.SHORT, last_close, trend_ema, breakout_high, breakout_low) and _supports_entry(
@@ -135,6 +151,18 @@ def _candidate_entry(
                 if candidate.take_profit_ticks is not None
                 else None
             )
+            trade_seed = build_trade_seed(
+                config,
+                rule_id=candidate.name,
+                strategy_name=candidate.name,
+                side=SignalAction.SHORT,
+                entry_candle=current,
+                entry_market_price=last_close,
+                qty=contracts,
+                atr_value=current_atr,
+                trend_ema=trend_ema,
+                tick_size=candidate.tick_size,
+            )
             return _OpenPosition(
                 candidate=candidate,
                 side=SignalAction.SHORT,
@@ -144,6 +172,7 @@ def _candidate_entry(
                 trailing_stop=proposed_stop,
                 take_profit_price=take_profit_price,
                 last_price=last_close,
+                trade_seed=trade_seed,
             )
 
     return None
@@ -196,6 +225,7 @@ def simulate_portfolio(
     config: AppConfig,
     candidates: list[RuleCandidate],
     external_factors: ExternalFactors | None = None,
+    wf_window_id: str | None = None,
 ) -> PortfolioLabResult:
     timestamps = sorted(
         {
@@ -225,6 +255,7 @@ def simulate_portfolio(
     min_available_balance = balance
     monthly_pnl: dict[str, float] = {}
     strategy_stats = {candidate.name: StrategyStats(name=candidate.name) for candidate in candidates}
+    trade_records: list[EnrichedTradeRecord] = []
     active_months = {
         _month_key(candle)
         for candles in candles_by_timeframe.values()
@@ -276,6 +307,16 @@ def simulate_portfolio(
                     monthly_key = _month_key(owner_candles[owner_index])
                     monthly_pnl[monthly_key] = monthly_pnl.get(monthly_key, 0.0) + pnl
                     stats.monthly_pnl[monthly_key] = stats.monthly_pnl.get(monthly_key, 0.0) + pnl
+                    if open_position.trade_seed is not None:
+                        trade_records.append(
+                            finalize_trade_record(
+                                config,
+                                open_position.trade_seed,
+                                exit_candle=owner_candles[owner_index],
+                                exit_market_price=exit_price,
+                                wf_window_id=wf_window_id,
+                            )
+                        )
                     open_position = None
                 continue
 
@@ -337,6 +378,16 @@ def simulate_portfolio(
         monthly_key = _month_key(owner_candles[-1])
         monthly_pnl[monthly_key] = monthly_pnl.get(monthly_key, 0.0) + pnl
         stats.monthly_pnl[monthly_key] = stats.monthly_pnl.get(monthly_key, 0.0) + pnl
+        if open_position.trade_seed is not None:
+            trade_records.append(
+                finalize_trade_record(
+                    config,
+                    open_position.trade_seed,
+                    exit_candle=owner_candles[-1],
+                    exit_market_price=open_position.last_price,
+                    wf_window_id=wf_window_id,
+                )
+            )
 
     profitable_months = sum(1 for value in monthly_pnl.values() if value > 0)
     losing_months = sum(1 for value in monthly_pnl.values() if value < 0)
@@ -357,4 +408,5 @@ def simulate_portfolio(
         active_months=len(active_months),
         monthly_pnl=dict(sorted(monthly_pnl.items())),
         strategy_stats=strategy_stats,
+        trade_records=trade_records,
     )
