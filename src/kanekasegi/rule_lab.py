@@ -65,6 +65,7 @@ class RuleLabResult:
     losing_months: int
     average_monthly_pnl: float
     active_months: int
+    monthly_pnl: dict[str, float] = field(default_factory=dict)
     trade_records: list[EnrichedTradeRecord] = field(default_factory=list, repr=False)
 
 
@@ -124,6 +125,14 @@ def _supports_calendar_filter(candidate: RuleCandidate, candle: MarketCandle) ->
         return is_sq
     if candidate.calendar_filter == "exclude_sq":
         return not is_sq
+    if candidate.calendar_filter == "exclude_sq_week":
+        return not _is_sq_week(entry_date)
+    if candidate.calendar_filter == "exclude_last_trading_window":
+        return not _is_last_trading_window(candle)
+    if candidate.calendar_filter == "exclude_roll_week":
+        return not _is_roll_week(candle)
+    if candidate.calendar_filter == "exclude_calendar_risk":
+        return not (_is_sq_week(entry_date) or _is_last_trading_window(candle) or _is_roll_week(candle))
     raise ValueError(f"unsupported calendar_filter: {candidate.calendar_filter}")
 
 
@@ -160,6 +169,45 @@ def _second_friday(year: int, month: int) -> date:
 
 def _is_sq_day(current_date: date) -> bool:
     return current_date == _second_friday(current_date.year, current_date.month)
+
+
+def _business_day_before(current_date: date) -> date:
+    previous = current_date - timedelta(days=1)
+    while previous.weekday() >= 5:
+        previous -= timedelta(days=1)
+    return previous
+
+
+def _is_sq_week(current_date: date) -> bool:
+    sq_day = _second_friday(current_date.year, current_date.month)
+    week_start = sq_day - timedelta(days=sq_day.weekday())
+    week_end = week_start + timedelta(days=4)
+    return week_start <= current_date <= week_end
+
+
+def _contract_month_from_candle(candle: MarketCandle) -> tuple[int, int]:
+    if candle.contract_month and len(candle.contract_month) >= 6:
+        return int(candle.contract_month[:4]), int(candle.contract_month[4:6])
+    entry_date = _entry_date(candle)
+    return entry_date.year, entry_date.month
+
+
+def _last_trading_day_for_contract(candle: MarketCandle) -> date:
+    year, month = _contract_month_from_candle(candle)
+    return _business_day_before(_second_friday(year, month))
+
+
+def _is_last_trading_window(candle: MarketCandle, days: int = 1) -> bool:
+    entry_date = _entry_date(candle)
+    last_trading_day = _last_trading_day_for_contract(candle)
+    return abs((entry_date - last_trading_day).days) <= days
+
+
+def _is_roll_week(candle: MarketCandle) -> bool:
+    last_trading_day = _last_trading_day_for_contract(candle)
+    week_start = last_trading_day - timedelta(days=last_trading_day.weekday())
+    week_end = week_start + timedelta(days=4)
+    return week_start <= _entry_date(candle) <= week_end
 
 
 def _previous_session_change(candles: list[MarketCandle], index: int) -> float | None:
@@ -260,6 +308,10 @@ def _supports_named_external_factor_filter(
         return value >= min_value
     if factor_filter == "negative":
         return value <= -min_value
+    if factor_filter == "above":
+        return value > min_value
+    if factor_filter == "below":
+        return value < min_value
     raise ValueError(f"unsupported external_factor_filter: {factor_filter}")
 
 
@@ -684,5 +736,6 @@ def simulate_candidate(
         losing_months=losing_months,
         average_monthly_pnl=average_monthly_pnl,
         active_months=len(all_months),
+        monthly_pnl=dict(sorted(monthly_pnl.items())),
         trade_records=trade_records,
     )

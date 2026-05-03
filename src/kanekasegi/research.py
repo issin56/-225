@@ -10,6 +10,7 @@ from .config import AppConfig, load_config
 from .csv_data import CsvMarketDataProvider
 from .external_factors import ExternalFactors, load_external_factors
 from .jpx_data import JpxMinuteZipMarketDataProvider
+from .research_reports import ResearchReportSettings, write_research_report_outputs
 from .rule_lab import RuleCandidate, run_rule_lab
 from .runtime_env import load_dotenv
 from .types import MarketCandle
@@ -3896,9 +3897,16 @@ def run_research_lab(
     candidate_names: list[str] | None = None,
     checkpoint_dir: str | Path | None = None,
     batch_name: str | None = None,
+    report_output_dir: str | Path | None = None,
+    report_test_months: int | None = None,
+    report_slippage_bps_add: float = 1.0,
+    report_vix_threshold: float = 0.5,
+    report_probe_limit: int = 50,
+    report_max_drawdown: float | None = None,
 ) -> dict[str, object]:
     candles_by_timeframe: dict[str, list[MarketCandle]] = {}
     candidate_results: list[dict[str, object]] = []
+    result_objects = {}
     selected_candidates = _select_candidates(candidate_names)
     external_factors = _load_external_factors(base_config)
     for candidate in selected_candidates:
@@ -3912,6 +3920,7 @@ def run_research_lab(
             [candidate],
             external_factors=external_factors,
         )[0]
+        result_objects[candidate.name] = result
         result = {
             "name": candidate.name,
             "timeframe": config.runtime.timeframe,
@@ -3955,6 +3964,8 @@ def run_research_lab(
             "losing_months": result.losing_months,
             "average_monthly_pnl": round(result.average_monthly_pnl, 2),
             "active_months": result.active_months,
+            "monthly_pnl": {month: round(pnl, 2) for month, pnl in result.monthly_pnl.items()},
+            "net_profit": round(sum(trade.pnl_net for trade in result.trade_records), 2),
             "profitable_month_ratio": round((result.profitable_months / result.active_months), 4) if result.active_months else 0.0,
         }
         result["score"] = _score_result(result)
@@ -3972,6 +3983,23 @@ def run_research_lab(
     )
     if checkpoint_dir is not None:
         payload["checkpoint_path"] = _write_checkpoint(checkpoint_dir, payload, batch_name=batch_name)
+    if report_output_dir is not None:
+        payload["research_report_outputs"] = write_research_report_outputs(
+            output_dir=Path(report_output_dir),
+            config=base_config,
+            candidates=selected_candidates,
+            results_by_name=result_objects,
+            candles_by_timeframe=candles_by_timeframe,
+            external_factors=external_factors,
+            settings=ResearchReportSettings(
+                min_trades=min_trades,
+                test_months=report_test_months or base_config.walk_forward.test_months,
+                slippage_bps_add=report_slippage_bps_add,
+                vix_threshold=report_vix_threshold,
+                probe_limit=report_probe_limit,
+                max_drawdown=report_max_drawdown,
+            ),
+        )
     return payload
 
 
@@ -3985,6 +4013,13 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", default="results")
     parser.add_argument("--batch-name", default="nk225micro-research")
     parser.add_argument("--output")
+    parser.add_argument("--report-output-dir", default="output")
+    parser.add_argument("--no-research-reports", action="store_true")
+    parser.add_argument("--report-test-months", type=int)
+    parser.add_argument("--report-slippage-bps-add", type=float, default=1.0)
+    parser.add_argument("--report-vix-threshold", type=float, default=0.5)
+    parser.add_argument("--report-probe-limit", type=int, default=50)
+    parser.add_argument("--report-max-drawdown", type=float)
     args = parser.parse_args()
 
     config = load_config(args.config)
@@ -3998,6 +4033,12 @@ def main() -> None:
         candidate_names=args.candidate,
         checkpoint_dir=args.checkpoint_dir,
         batch_name=args.batch_name,
+        report_output_dir=None if args.no_research_reports else args.report_output_dir,
+        report_test_months=args.report_test_months,
+        report_slippage_bps_add=args.report_slippage_bps_add,
+        report_vix_threshold=args.report_vix_threshold,
+        report_probe_limit=args.report_probe_limit,
+        report_max_drawdown=args.report_max_drawdown,
     )
     rendered = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:

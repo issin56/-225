@@ -6,7 +6,10 @@ from kanekasegi.rule_lab import (
     RuleCandidate,
     _in_entry_window,
     _is_gotobi_day,
+    _is_roll_week,
     _is_sq_day,
+    _is_sq_week,
+    _is_last_trading_window,
     _supports_calendar_filter,
     _supports_month_filter,
     _position_size,
@@ -230,6 +233,48 @@ def test_sq_filter_marks_second_friday_only():
     assert not _is_sq_day(datetime(2026, 1, 8).date())
 
 
+def test_sq_week_and_roll_filters_use_contract_month():
+    sq_week_candle = MarketCandle(
+        timestamp=datetime(2026, 3, 12, 9, 0),
+        open=30000,
+        high=30010,
+        low=29990,
+        close=30005,
+        volume=100,
+        session=SessionType.DAY,
+        contract_month="202603",
+        trading_day="2026-03-12",
+    )
+    normal_candle = MarketCandle(
+        timestamp=datetime(2026, 3, 17, 9, 0),
+        open=30000,
+        high=30010,
+        low=29990,
+        close=30005,
+        volume=100,
+        session=SessionType.DAY,
+        contract_month="202603",
+        trading_day="2026-03-17",
+    )
+
+    assert _is_sq_week(datetime(2026, 3, 12).date())
+    assert _is_last_trading_window(sq_week_candle)
+    assert _is_roll_week(sq_week_candle)
+    assert not _is_roll_week(normal_candle)
+
+    candidate = RuleCandidate(
+        name="exclude_calendar_risk",
+        breakout_lookback=2,
+        ema_period=2,
+        atr_period=2,
+        atr_stop_multiplier=1.0,
+        trailing_atr_multiplier=1.0,
+        calendar_filter="exclude_calendar_risk",
+    )
+    assert not _supports_calendar_filter(candidate, sq_week_candle)
+    assert _supports_calendar_filter(candidate, normal_candle)
+
+
 def test_prior_session_filter_detects_previous_session_direction():
     candidate = RuleCandidate(
         name="prior_session_down_only",
@@ -311,6 +356,38 @@ def test_external_factor_filter_requires_matching_sign():
     assert _supports_external_factor_filter(candidate, candle, factors)
     candidate.external_factor_filter = "negative"
     assert not _supports_external_factor_filter(candidate, candle, factors)
+
+
+def test_external_factor_filter_supports_above_and_below_thresholds():
+    candidate = RuleCandidate(
+        name="vix_below",
+        breakout_lookback=2,
+        ema_period=2,
+        atr_period=2,
+        atr_stop_multiplier=1.0,
+        trailing_atr_multiplier=1.0,
+        external_factor_name="vix_change",
+        external_factor_filter="below",
+        external_factor_min_value=0.5,
+    )
+    candle = MarketCandle(
+        timestamp=datetime(2026, 1, 5, 9, 0),
+        open=30000,
+        high=30010,
+        low=29990,
+        close=30005,
+        volume=100,
+        session=SessionType.DAY,
+        contract_month="202603",
+        trading_day="2026-01-05",
+    )
+    factors = ExternalFactors(by_trading_day={"2026-01-05": {"vix_change": 0.4, "us10y_change_bp": 2.0}})
+
+    assert _supports_external_factor_filter(candidate, candle, factors)
+    candidate.external_factor_filter = "above"
+    candidate.external_factor_name = "us10y_change_bp"
+    candidate.external_factor_min_value = 0.0
+    assert _supports_external_factor_filter(candidate, candle, factors)
 
 
 def test_external_factor_filter_can_require_two_factors():
