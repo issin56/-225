@@ -16,31 +16,31 @@ It preserves time order and focuses on out-of-sample behavior and overfitting de
 - neighbor_count: `3`
 
 ## Candidate Set
-- `day_midday_long_prev_night_up_trail_ex_1_2_4_6_9_10_11`
+- `day_midday_long_prev_night_up_trail_ex_1_2_4_6_9_10_11_tighter_trail`
 - `day_midday_long_prev_night_up_trail_only_6_prev_range_above_45_mon_wed_vix_up_02_t8`
 - `day_morning_short_mon_thu_prev_night_down_tight_stop_ex_9_10`
-- `both_fast_short_night_tue_fri_usdjpy_down_tp_ex_2_5_6_8_9_10_11_12`
+- `both_fast_short_night_tue_fri_usdjpy_down_tp_ex_2_5_6_8_9_10_11_12_ex_sq`
 - `day_opening_short_range_fade_lb8_buf2_ex_1_2_4_6_7_8_10`
-- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05`
+- `day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05_ex_sq_range_above_105`
 
 ## Summary
 - tested_windows: `4`
 - accepted_windows: `4`
-- total_test_profit: `133950.00`
-- average_test_win_rate: `0.5935`
-- worst_test_drawdown: `11500.00`
+- total_test_profit: `132200.00`
+- average_test_win_rate: `0.5858`
+- worst_test_drawdown: `7800.00`
 
 ## OOS Distribution
 - count: `4`
-- mean: `33487.5`
-- median: `31075.0`
-- min: `28150.0`
-- max: `43650.0`
-- stddev: `6181.9672`
+- mean: `33050.0`
+- median: `28500.0`
+- min: `22300.0`
+- max: `52900.0`
+- stddev: `11739.9957`
 
 ## Single Window Dependency
 - dominant_window_id: `wf_03`
-- dominant_share: `0.3259`
+- dominant_share: `0.4002`
 - warning: `False`
 
 ## Overfitting Signals

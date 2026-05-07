@@ -11,6 +11,7 @@ from typing import Any
 LEADER_PATTERNS = (
     re.compile(r"Current strongest portfolio remains `([^`]+)`"),
     re.compile(r"Current strongest portfolio is `([^`]+)`"),
+    re.compile(r"Current strongest portfolio is now `([^`]+)`"),
     re.compile(r"Current leader remains `([^`]+)`"),
 )
 DATE_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")

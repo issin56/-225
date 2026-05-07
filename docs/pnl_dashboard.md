@@ -5,10 +5,10 @@ This dashboard extends the Nikkei 225 backtest outputs with additive observabili
 It keeps the existing JSON outputs intact and adds trade detail, pnl decomposition, and charts.
 
 ## Current Run
-- portfolio_name: `day_midday_long_prev_night_up_trail_ex_1_2_4_6_9_10_11 + day_midday_long_prev_night_up_trail_only_6_prev_range_above_45_mon_wed_vix_up_02_t8 + day_morning_short_mon_thu_prev_night_down_tight_stop_ex_9_10 + both_fast_short_night_tue_fri_usdjpy_down_tp_ex_2_5_6_8_9_10_11_12_ex_sq_v020 + day_opening_short_range_fade_lb8_buf2_ex_1_2_4_6_7_8_10 + day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05`
-- profit: `233450.00`
+- portfolio_name: `day_midday_long_prev_night_up_trail_ex_1_2_4_6_9_10_11_tighter_trail + day_midday_long_prev_night_up_trail_only_6_prev_range_above_45_mon_wed_vix_up_02_t8 + day_morning_short_mon_thu_prev_night_down_tight_stop_ex_9_10 + both_fast_short_night_tue_fri_usdjpy_down_tp_ex_2_5_6_8_9_10_11_12_ex_sq + day_opening_short_range_fade_lb8_buf2_ex_1_2_4_6_7_8_10 + day_opening_short_range_fade_lb8_buf2_only_4_vix_up_05_ex_sq_range_above_105`
+- profit: `229950.00`
 - max_drawdown: `10350.00`
-- win_rate: `0.5818`
+- win_rate: `0.5807`
 - trades_csv: `output/trades_enriched.csv`
 
 ## Enriched Trade Columns
